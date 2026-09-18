@@ -1,9 +1,9 @@
 {
-  "name": "klawfin-readiness",
+  "name": "groundwork",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Klawfin Readiness Engine - internal delivery tool for the Fundraise-Readiness Sprint.",
+  "description": "Groundwork by Klawfin - internal delivery tool for the Fundraise-Readiness Sprint.",
   "scripts": {
     "dev": "pnpm --filter @klawfin/web dev",
     "build": "pnpm --filter @klawfin/web build",

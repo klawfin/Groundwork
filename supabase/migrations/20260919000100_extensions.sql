@@ -1,7 +1,7 @@
 -- ---------------------------------------------------------------------------
 -- Extensions and enums.
 --
--- Klawfin Readiness Engine, Phase 1.
+-- Groundwork by Klawfin, Phase 1.
 -- Forward-only migrations. Never edit schema through the Supabase dashboard:
 -- a dashboard change is invisible to git and will be silently reverted by the
 -- next migration (architecture 7.2).

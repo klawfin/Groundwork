@@ -1,0 +1,4 @@
+# This tool is unlisted and holds client financial data.
+# It must never be indexed.
+User-agent: *
+Disallow: /

@@ -10,3 +10,4 @@
 export * from './intake/schema.js';
 export * from './intake/presence.js';
 export * from './legal/disclaimers.js';
+export * from './legal/branding.js';

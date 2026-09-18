@@ -1,4 +1,4 @@
-# Decision records
+# Decision records — Groundwork by Klawfin
 
 One file per resolved `OPEN-` item from the PRD. Each records the decision, the
 date, and the reasoning.
@@ -39,3 +39,4 @@ plan and the readme, which disagree in places.
 | — | Prompt caching off in Phase 1, prompt structured cache-ready | [0010](./0010-prompt-caching.md) |
 | — | Cap-table holders stored as refs, never names | [0011](./0011-cap-table-pii.md) |
 | — | Repository layout: pnpm workspace | [0012](./0012-repo-layout.md) |
+| — | Product name: Groundwork by Klawfin | [0013](./0013-product-name.md) |

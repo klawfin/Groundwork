@@ -279,7 +279,12 @@ describe('response schema (PRD 6.4)', () => {
 
   it('rejects an unknown dimension_id', () => {
     const response = validResponse(score) as NarrativeResponse;
-    const broken = structuredClone(response);
+    // Cast through unknown deliberately: the point of the test is that a value
+    // the type system forbids is still rejected at runtime, because the model
+    // is not bound by our types.
+    const broken = structuredClone(response) as unknown as {
+      dimensions: { dimension_id: string }[];
+    };
     broken.dimensions[0]!.dimension_id = 'D9';
     expect(validateNarrativeResponse(broken).ok).toBe(false);
   });
