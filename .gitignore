@@ -1,3 +1,43 @@
-node_modules
+# Dependencies
+node_modules/
+.pnpm-store/
 
-docs/*
+# Build output
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------------------
+# Secrets. A key committed to git - even in a deleted commit, even in a branch
+# nobody merged - is COMPROMISED. Rotate it. Do not rewrite history and call
+# it fixed (readme.md).
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# Database dumps contain real client financial data. They must never be
+# committed, and when stored anywhere they must be encrypted (architecture 7.5).
+*.dump
+*.dump.age
+*.sql.gz
+backup-*
+
+# Local Supabase
+supabase/.branches/
+supabase/.temp/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Test output
+coverage/
+.vitest/
+
+# Vercel
+.vercel

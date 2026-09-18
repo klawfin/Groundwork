@@ -14,7 +14,11 @@
  * here that invited a number would be a hole in PRD NG9.
  */
 
-import { z } from 'zod';
+// Zod v4 (shipped alongside v3 in the zod package). The Anthropic SDK's
+// `zodOutputFormat` helper is typed against zod/v4, so the RESPONSE schema
+// uses v4. The intake schema in @klawfin/core stays on v3 - the two coexist
+// deliberately, and nothing passes a schema across that boundary.
+import * as z from 'zod/v4';
 import { DIMENSION_IDS } from '@klawfin/rubric';
 
 /** Bumped on any prompt or schema change. Stored on every report (PRD 6.7). */
@@ -42,7 +46,7 @@ export const recommendationSchema = z.object({
 });
 
 export const dimensionNarrativeSchema = z.object({
-  dimension_id: z.enum(DIMENSION_IDS as unknown as [string, ...string[]]),
+  dimension_id: z.enum([...DIMENSION_IDS]),
   what_we_observed: nonEmpty(1_500),
   gaps: z.array(gapSchema).max(8),
   recommendations: z.array(recommendationSchema).max(8),
@@ -55,7 +59,7 @@ export const dimensionNarrativeSchema = z.object({
 
 export const priorityGapSchema = z.object({
   rank: z.number().int().min(1).max(10),
-  dimension_id: z.enum(DIMENSION_IDS as unknown as [string, ...string[]]),
+  dimension_id: z.enum([...DIMENSION_IDS]),
   gap: nonEmpty(400),
   rationale: nonEmpty(800).describe(
     'Why this gap ranks here, referencing score impact and effort. The ordering is supplied; explain it, do not change it.',
@@ -101,7 +105,7 @@ export const narrativeResponseSchema = z
     DIMENSION_IDS.forEach((expected, index) => {
       if (ids[index] !== expected) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['dimensions', index, 'dimension_id'],
           message: `Expected dimension ${expected} at position ${index}, received ${ids[index] ?? 'nothing'}. Dimensions must be exactly D1-D6, in order.`,
         });
@@ -115,7 +119,7 @@ export const narrativeResponseSchema = z
     ranks.forEach((rank, index) => {
       if (rank !== index + 1) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['priority_gaps'],
           message: `Priority ranks must be consecutive from 1; got [${ranks.join(', ')}].`,
         });

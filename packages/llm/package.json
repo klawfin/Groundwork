@@ -14,7 +14,7 @@
     "./client": "./src/client.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.70.0",
+    "@anthropic-ai/sdk": "^0.127.0",
     "@klawfin/core": "workspace:*",
     "@klawfin/rubric": "workspace:*",
     "@klawfin/validation": "workspace:*",
