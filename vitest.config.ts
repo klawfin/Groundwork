@@ -19,6 +19,21 @@ const at = (relative: string) => fileURLToPath(new URL(relative, import.meta.url
 export default defineConfig({
   resolve: {
     alias: [
+      /**
+       * `server-only` throws on import by default, and ships its own no-op for
+       * React's `react-server` condition. Vitest cannot select that condition
+       * here because the package is SSR-externalised and therefore resolved by
+       * Node rather than Vite, so it is pointed at the package's OWN empty
+       * entry point instead of a hand-written stub.
+       *
+       * Without this, every module carrying the guard - the LLM client, the
+       * PDF renderer, the admin Supabase client - is untestable. The guard
+       * stays fully active in the Next build, which is where it has to work.
+       */
+      {
+        find: /^server-only$/,
+        replacement: at('./apps/web/node_modules/server-only/empty.js'),
+      },
       // Subpaths first - see note above.
       { find: '@klawfin/core/tests/fixtures', replacement: at('./packages/core/tests/fixtures.ts') },
       { find: '@klawfin/core/legal', replacement: at('./packages/core/src/legal/disclaimers.ts') },
@@ -30,9 +45,16 @@ export default defineConfig({
       { find: '@klawfin/llm', replacement: at('./packages/llm/src/index.ts') },
     ],
   },
+  /**
+   * The root tsconfig sets `jsx: "preserve"` because Next.js does its own JSX
+   * transform. Vitest is not Next, so it needs the automatic runtime declared
+   * explicitly - otherwise the PDF document compiles to bare `React.createElement`
+   * calls with no React in scope.
+   */
+  esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
-    include: ['packages/*/tests/**/*.test.ts', 'apps/web/tests/**/*.test.ts'],
+    include: ['packages/*/tests/**/*.test.ts', 'apps/web/tests/**/*.test.{ts,tsx}'],
     coverage: {
       provider: 'v8',
       // readme.md: put the tests where correctness is load-bearing.
