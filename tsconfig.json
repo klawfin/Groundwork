@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "allowJs": true,
+    "incremental": true,
+    "baseUrl": ".",
+    "paths": {
+      "@klawfin/core": ["./packages/core/src/index.ts"],
+      "@klawfin/core/tests/fixtures": ["./packages/core/tests/fixtures.ts"],
+      "@klawfin/core/*": ["./packages/core/src/*"],
+      "@klawfin/rubric": ["./packages/rubric/src/index.ts"],
+      "@klawfin/rubric/*": ["./packages/rubric/src/*"],
+      "@klawfin/validation": ["./packages/validation/src/index.ts"],
+      "@klawfin/validation/*": ["./packages/validation/src/*"],
+      "@klawfin/llm": ["./packages/llm/src/index.ts"],
+      "@klawfin/llm/*": ["./packages/llm/src/*"],
+      "@/*": ["./apps/web/src/*"]
+    }
+  },
+  "include": ["packages/*/src/**/*", "packages/*/tests/**/*", "apps/web/src/**/*", "apps/web/*.ts"],
+  "exclude": ["node_modules", "**/.next", "**/dist"]
+}

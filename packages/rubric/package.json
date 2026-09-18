@@ -1,0 +1,18 @@
+{
+  "name": "@klawfin/rubric",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The scoring engine. PURE - no network, no database, no clock, no randomness.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./score": "./src/score.ts",
+    "./definitions": "./src/definitions.ts",
+    "./mapping": "./src/mapping.ts",
+    "./bands": "./src/bands.ts",
+    "./types": "./src/types.ts"
+  },
+  "dependencies": { "@klawfin/core": "workspace:*" }
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "baseUrl": "../..", "paths": {
+    "@klawfin/core": ["./packages/core/src/index.ts"],
+    "@klawfin/rubric": ["./packages/rubric/src/index.ts"],
+    "@klawfin/validation": ["./packages/validation/src/index.ts"],
+    "@klawfin/llm": ["./packages/llm/src/index.ts"]
+  } },
+  "include": ["src/**/*", "tests/**/*"]
+}
