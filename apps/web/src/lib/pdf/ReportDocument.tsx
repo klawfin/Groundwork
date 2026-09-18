@@ -19,7 +19,7 @@
  * not editable by anyone (PRD 7.4).
  */
 
-import { Document, Page, Text, View } from '@react-pdf/renderer';
+import { Document, Page, Text, View, type DocumentProps } from '@react-pdf/renderer';
 import type { ReactElement } from 'react';
 
 import {
@@ -64,7 +64,7 @@ export interface ReportProps {
 
 const NARRATIVE_PENDING = 'Assessment narrative pending.';
 
-export function ReportDocument(props: ReportProps): ReactElement {
+export function ReportDocument(props: ReportProps): ReactElement<DocumentProps> {
   const { clientName, generatedOn, reportVersion, score, narrative } = props;
 
   return (
@@ -209,26 +209,26 @@ export function ReportDocument(props: ReportProps): ReactElement {
  * someone has to remember (PRD P1-08).
  *
  * ---------------------------------------------------------------------------
- * THE FIXED ELEMENTS ARE INLINED HERE ON PURPOSE. DO NOT EXTRACT THEM.
+ * THE FOOTER ONCE RENDERED ON NO PAGE AT ALL. The cause is in theme.ts:
  *
- * react-pdf does not render a `fixed` element when it sits inside a custom
- * component that is itself inside another custom component. `<Body>` is a
- * custom component, so a `<Footer />` custom component nested inside it
- * silently produces NOTHING - no error, no warning, just a document with no
- * footer. Verified by isolating the cases:
+ *   A unitless `lineHeight` on the PAGE style is inherited by this absolutely
+ *   positioned `fixed` footer, and react-pdf then lays it outside the page
+ *   box. It disappears from every page, silently - no error, no warning.
  *
- *   custom Page + inline fixed footer   -> renders
- *   plain Page  + custom fixed Footer   -> renders
- *   custom Page + custom fixed Footer   -> SILENTLY DROPPED
+ * Setting an explicit lineHeight on the footer does not override it; only
+ * removing it from the Page does. See the comment on `styles.page`.
  *
- * Ordinary nested custom components are fine (DimensionDetail below is one);
- * the constraint is specific to `fixed`. This is the "layout subset is real"
- * cost that decision 0003 accepted, and it would have shipped a report with no
- * disclaimer on any page if the export test asserted on the React tree instead
- * of on extracted PDF text.
+ * Keeping the fixed elements inline here is a secondary precaution: it keeps
+ * the footer and the page style visible in one place, so the next person
+ * changing either can see both.
+ *
+ * This is the "layout subset is real" cost decision 0003 accepted. It would
+ * have shipped a report with no disclaimer on any page - PRD P1-08's exact
+ * regulatory exposure - if the export test had asserted on the React tree
+ * instead of on text extracted from a rendered PDF.
  * ---------------------------------------------------------------------------
  */
-export function Body(props: ReportProps & { children: React.ReactNode }): ReactElement {
+function Body(props: ReportProps & { children: React.ReactNode }): ReactElement {
   return (
     <Page size="A4" style={styles.page} wrap>
       {props.hasIncompleteWatermark && (

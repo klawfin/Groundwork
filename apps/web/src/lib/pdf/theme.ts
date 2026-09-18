@@ -59,12 +59,24 @@ export const pagePadding = {
 } as const;
 
 export const styles = StyleSheet.create({
+  /**
+   * NO `lineHeight` HERE. DO NOT ADD ONE.
+   *
+   * A unitless line-height on the Page style is inherited by the absolutely
+   * positioned `fixed` footer, and react-pdf then lays that footer outside the
+   * page box - it vanishes from every page, silently, with no error. Setting
+   * an explicit lineHeight on the footer does NOT override it; only removing
+   * it from the Page does.
+   *
+   * That failure ships a report with no disclaimer on any page, which is the
+   * exact regulatory exposure PRD P1-08 exists to prevent. Line-height belongs
+   * on the text styles below, where it is wanted, and nowhere else.
+   */
   page: {
     ...pagePadding,
     fontFamily: 'Helvetica',
     fontSize: type.body,
     color: color.body,
-    lineHeight: 1.45,
   },
 
   /* Cover ---------------------------------------------------------------- */
@@ -83,7 +95,7 @@ export const styles = StyleSheet.create({
   h1: { fontSize: type.h1, fontFamily: 'Helvetica-Bold', color: color.ink, marginBottom: space.md },
   h2: { fontSize: type.h2, fontFamily: 'Helvetica-Bold', color: color.ink, marginBottom: space.sm },
   h3: { fontSize: type.h3, fontFamily: 'Helvetica-Bold', color: color.ink, marginBottom: space.xs },
-  paragraph: { marginBottom: space.sm },
+  paragraph: { marginBottom: space.sm, lineHeight: 1.45 },
   lead: { fontSize: type.lead, lineHeight: 1.5, marginBottom: space.md },
   small: { fontSize: type.small, color: color.muted },
   micro: { fontSize: type.micro, color: color.muted },
@@ -125,11 +137,17 @@ export const styles = StyleSheet.create({
   barFill: { height: 7, backgroundColor: color.accent },
 
   /* Findings ------------------------------------------------------------- */
-  gapBlock: { marginBottom: space.md, paddingLeft: space.sm, borderLeftWidth: 2, borderLeftColor: color.hairline },
+  gapBlock: {
+    marginBottom: space.md,
+    paddingLeft: space.sm,
+    borderLeftWidth: 2,
+    borderLeftColor: color.hairline,
+    lineHeight: 1.4,
+  },
   recBlock: { marginBottom: space.sm },
   listItem: { flexDirection: 'row', marginBottom: space.xs },
   bullet: { width: 14 },
-  listBody: { flex: 1 },
+  listBody: { flex: 1, lineHeight: 1.4 },
 
   badge: {
     fontSize: type.micro,
