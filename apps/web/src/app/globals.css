@@ -1,11 +1,145 @@
 @import 'tailwindcss';
 
-/* One user, internal tool. No design system, no component library - the
-   client-facing artifact is the PDF, not this screen (decision 0003). */
+/* ==========================================================================
+   Groundwork design tokens
+   ==========================================================================
+
+   The brand kit is SEVEN colours and this file uses all seven. Nothing else
+   may be added: no Tailwind stone/slate/red/emerald, no opacity tricks that
+   invent an eighth colour. If a state needs distinguishing, it is
+   distinguished by fill, weight, border or label - not by a new hue.
+
+   ONE MEASURED RULE GOVERNS EVERYTHING BELOW.
+
+   Mint, Orange and Light Blue are light colours. Against Soft White or Warm
+   Cream they land at 1.5-2.2:1, which is unreadable and fails WCAG outright.
+   Against Deep Navy or Near Black they reach 6.4-9.0:1.
+
+       navy on cream    12.31  AAA      mint on white    1.94  FAIL
+       navy on white    14.18  AAA      orange on white  2.22  FAIL
+       black on cream   13.92  AAA      blue on white    1.78  FAIL
+       cream on navy    12.31  AAA
+
+   So the three accents are FILLS, never text. A status is a filled chip with
+   navy text on it. Writing status in coloured text would be the obvious move
+   and it is the one thing this palette cannot do.
+
+   Semantic names, not colour names. `--color-warning` can be re-pointed when
+   the brand changes; `--color-orange` scattered through forty components
+   cannot.
+   ========================================================================== */
+
+@theme {
+  /* --- Raw brand kit ---------------------------------------------------- */
+  --color-navy: #132849;
+  --color-cream: #f6e9d9;
+  --color-mint: #52cc94;
+  --color-softwhite: #fffaf5;
+  --color-nearblack: #1e1e21;
+  --color-orange: #f99132;
+  --color-skyblue: #97c1ff;
+
+  /* --- Surfaces --------------------------------------------------------- */
+  /* Warm Cream as the page ground. A warm ground is what separates this from
+     every other admin tool, which defaults to cold grey. */
+  --color-ground: #f6e9d9;
+  /* Soft White lifts cards off the cream with no elevation effect at all.
+     The two differ by only 1.15:1, which is deliberate - it reads as a change
+     of material rather than a change of colour. */
+  --color-surface: #fffaf5;
+  /* Deep Navy for inverted surfaces: nav, primary buttons, the score block. */
+  --color-inverse: #132849;
+
+  /* --- Text ------------------------------------------------------------- */
+  --color-ink: #132849; /* 12.31:1 on ground, 14.18:1 on surface */
+  --color-ink-strong: #1e1e21; /* Near Black. Headings and numerals only. */
+  --color-on-inverse: #fffaf5; /* 14.18:1 on navy */
+  --color-on-inverse-muted: #f6e9d9; /* 12.31:1 on navy */
+
+  /* --- Lines ------------------------------------------------------------ */
+  /* Navy at low alpha rather than a grey, so every rule on the page belongs
+     to the palette rather than sitting slightly outside it. */
+  --color-line: color-mix(in srgb, #132849 14%, transparent);
+  --color-line-strong: color-mix(in srgb, #132849 28%, transparent);
+
+  /* --- Status: FILLS ONLY ----------------------------------------------- */
+  --color-positive: #52cc94; /* pass, ready, complete    - navy on it: 7.30 */
+  --color-warning: #f99132; /* attention, preliminary   - navy on it: 6.39 */
+  --color-info: #97c1ff; /* neutral notice, offline  - navy on it: 7.98 */
+  /* Blocking and destructive. The palette has no red, and inventing one would
+     break the brief. Near Black carries it instead: it is the heaviest colour
+     available, and weight reads as severity as reliably as hue does - while
+     staying legible to the ~8% of men who would not see a red. */
+  --color-critical: #1e1e21; /* softwhite on it: 16.03 */
+
+  /* --- Type ------------------------------------------------------------- */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-fraunces), ui-serif, Georgia, serif;
+
+  /* --- Radius ----------------------------------------------------------- */
+  /* Restrained. Heavy rounding reads as consumer software; this is a document
+     tool that a founder is shown across a table. */
+  --radius-card: 10px;
+  --radius-control: 7px;
+}
+
 :root {
   color-scheme: light;
 }
 
 body {
-  @apply bg-stone-50 text-stone-900 antialiased;
+  background-color: var(--color-ground);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --------------------------------------------------------------------------
+   Focus.
+   Navy on a cream ground is legible at 12.31:1, and the offset keeps the ring
+   clear of the control's own border. Never remove this: magic-link auth means
+   keyboard-only sign-in is a real path, not a hypothetical one.
+   -------------------------------------------------------------------------- */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* --------------------------------------------------------------------------
+   Numerals.
+   Scores, costs, percentages and token counts all change in place. Without
+   tabular figures the digits jitter as they update, which on a score panel
+   reads as instability in the number itself.
+   -------------------------------------------------------------------------- */
+.tabular,
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   Score display.
+   The composite is the single most-looked-at element in the product. Serif,
+   because it is a judgement being presented rather than a metric being
+   monitored.
+   -------------------------------------------------------------------------- */
+.score-numeral {
+  font-family: var(--font-serif);
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   Print.
+   The PDF is the client-facing artifact and has its own tokens (decision
+   0003), but these screens do get printed. Drop the navy floods so a warning
+   chip does not arrive as a black rectangle.
+   -------------------------------------------------------------------------- */
+@media print {
+  /* No background override here. Browsers do not print background colours by
+     default, so the page already comes out on white paper - and hard-coding
+     white would have put an eighth colour in the stylesheet for nothing. */
+  .no-print {
+    display: none;
+  }
 }

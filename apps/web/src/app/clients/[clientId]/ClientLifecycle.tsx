@@ -54,9 +54,9 @@ export function ClientLifecycle({
 
   if (executed) {
     return (
-      <section className="rounded-lg border border-stone-300 bg-stone-50 p-4 text-sm">
+      <section className="rounded-card border border-line-strong bg-ground p-4 text-sm">
         <h2 className="font-medium">Deleted</h2>
-        <p className="mt-2 text-stone-600">
+        <p className="mt-2 text-ink/70">
           This client&apos;s data was deleted on {executed.executedAt?.slice(0, 10)}. The request
           record remains as evidence that it was actioned.
         </p>
@@ -65,13 +65,13 @@ export function ClientLifecycle({
   }
 
   return (
-    <section className="rounded-lg border border-stone-200 bg-white p-4 text-sm">
+    <section className="rounded-card border border-line bg-surface p-4 text-sm">
       <h2 className="font-medium">Record</h2>
 
       {message && (
         <p
           className={`mt-3 rounded p-2 text-xs ${
-            message.tone === 'ok' ? 'bg-emerald-50 text-emerald-900' : 'bg-red-50 text-red-900'
+            message.tone === 'ok' ? 'bg-positive text-ink' : 'bg-critical text-on-inverse'
           }`}
         >
           {message.text}
@@ -80,7 +80,7 @@ export function ClientLifecycle({
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         {archivedAt ? (
-          <span className="text-xs text-stone-500">Archived {archivedAt.slice(0, 10)}</span>
+          <span className="text-xs text-ink/55">Archived {archivedAt.slice(0, 10)}</span>
         ) : (
           <button
             type="button"
@@ -95,7 +95,7 @@ export function ClientLifecycle({
               );
               setBusy(false);
             }}
-            className="rounded border border-stone-300 px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+            className="rounded border border-line-strong px-3 py-1.5 text-xs font-medium disabled:opacity-50"
           >
             Archive
           </button>
@@ -110,8 +110,8 @@ export function ClientLifecycle({
       )}
 
       {open && (
-        <div className="mt-4 rounded border border-red-200 bg-red-50 p-3">
-          <p className="text-xs font-medium text-red-900">
+        <div className="mt-4 rounded border border-line bg-critical p-3">
+          <p className="text-xs font-medium text-on-inverse">
             Deletion requested {open.createdAt.slice(0, 10)} ({open.requestedBy.replace('_', ' ')})
           </p>
           {isOwner ? (
@@ -121,7 +121,7 @@ export function ClientLifecycle({
               onDone={(text, tone) => setMessage({ tone, text })}
             />
           ) : (
-            <p className="mt-2 text-xs text-red-900">
+            <p className="mt-2 text-xs text-on-inverse">
               Only the account owner can execute this.
             </p>
           )}
@@ -150,7 +150,7 @@ function DeletionRequest({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-4 text-xs text-stone-500 underline underline-offset-2"
+        className="mt-4 text-xs text-ink/55 underline underline-offset-2"
       >
         Record a deletion request
       </button>
@@ -158,15 +158,15 @@ function DeletionRequest({
   }
 
   return (
-    <div className="mt-4 space-y-2 rounded border border-stone-200 p-3">
-      <p className="text-xs text-stone-600">
+    <div className="mt-4 space-y-2 rounded border border-line p-3">
+      <p className="text-xs text-ink/70">
         Recording a request does not delete anything. It is the record that one was made, which is
         what the statutory clock runs on.
       </p>
       <select
         value={requestedBy}
         onChange={(e) => setRequestedBy(e.target.value as typeof requestedBy)}
-        className="w-full rounded border border-stone-300 p-1.5 text-xs"
+        className="w-full rounded border border-line-strong p-1.5 text-xs"
       >
         <option value="data_principal">Requested by the client</option>
         <option value="klawfin_internal">Internal decision</option>
@@ -176,7 +176,7 @@ function DeletionRequest({
         value={reason}
         placeholder="What was asked for, and by whom?"
         onChange={(e) => setReason(e.target.value)}
-        className="w-full rounded border border-stone-300 p-1.5 text-xs"
+        className="w-full rounded border border-line-strong p-1.5 text-xs"
       />
       <div className="flex gap-2">
         <button
@@ -196,14 +196,14 @@ function DeletionRequest({
             }
             setBusy(false);
           }}
-          className="rounded bg-stone-900 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+          className="rounded bg-inverse px-2 py-1 text-xs font-medium text-on-inverse disabled:opacity-40"
         >
           {busy ? 'Recording...' : 'Record request'}
         </button>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="rounded border border-stone-300 px-2 py-1 text-xs"
+          className="rounded border border-line-strong px-2 py-1 text-xs"
         >
           Cancel
         </button>
@@ -226,7 +226,7 @@ function ExecuteDeletion({
 
   return (
     <div className="mt-3 space-y-2">
-      <p className="text-xs text-red-900">
+      <p className="text-xs text-on-inverse">
         This permanently deletes the client record, every assessment, every narrative and every
         stored report PDF. It cannot be undone. Type the client&apos;s name to confirm.
       </p>
@@ -234,7 +234,7 @@ function ExecuteDeletion({
         value={typed}
         onChange={(e) => setTyped(e.target.value)}
         placeholder={clientName}
-        className="w-full rounded border border-red-300 p-1.5 text-xs"
+        className="w-full rounded border border-line-strong p-1.5 text-xs"
       />
       <button
         type="button"
@@ -256,7 +256,7 @@ function ExecuteDeletion({
           }
           setBusy(false);
         }}
-        className="rounded bg-red-700 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+        className="rounded bg-critical px-3 py-1.5 text-xs font-medium text-on-inverse disabled:opacity-40"
       >
         {busy ? 'Deleting...' : 'Delete permanently'}
       </button>

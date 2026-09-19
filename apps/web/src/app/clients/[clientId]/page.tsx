@@ -37,7 +37,7 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
     <main className="mx-auto max-w-4xl px-6 py-8">
       <header>
         <h1 className="text-xl font-semibold">{client.legal_name}</h1>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-ink/55">
           {client.primary_contact_name} · {client.sector ?? 'sector not recorded'}
           {client.archived_at && ' · archived'}
         </p>
@@ -46,9 +46,9 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
       <section className="mt-6">
         <h2 className="text-sm font-medium">Assessments</h2>
         {assessments.length === 0 ? (
-          <p className="mt-2 text-sm text-stone-600">None yet.</p>
+          <p className="mt-2 text-sm text-ink/70">None yet.</p>
         ) : (
-          <ul className="mt-2 divide-y divide-stone-100 rounded-lg border border-stone-200 bg-white">
+          <ul className="mt-2 divide-y divide-line rounded-card border border-line bg-surface">
             {assessments.map((assessment) => (
               <li key={assessment.id} className="flex items-baseline justify-between gap-3 px-4 py-3">
                 <a
@@ -57,7 +57,7 @@ export default async function ClientPage({ params }: { params: Promise<{ clientI
                 >
                   {assessment.created_at.slice(0, 10)}
                 </a>
-                <span className="text-xs text-stone-500">
+                <span className="text-xs text-ink/55">
                   {assessment.status}
                   {assessment.composite_score !== null && ` · ${assessment.composite_score}/100`}
                 </span>

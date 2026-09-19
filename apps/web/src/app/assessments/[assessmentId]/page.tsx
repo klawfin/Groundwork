@@ -45,9 +45,9 @@ export default async function AssessmentPage({
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <header className="mb-6">
-        <p className="text-xs uppercase tracking-wide text-stone-500">Assessment</p>
+        <p className="text-xs uppercase tracking-wide text-ink/55">Assessment</p>
         <h1 className="text-xl font-semibold">{client.legal_name}</h1>
-        <p className="mt-1 text-xs text-stone-500">
+        <p className="mt-1 text-xs text-ink/55">
           Rubric {assessment.rubric_version} · {assessment.status}
           {assessment.intake_locked_at && ' · intake locked'}
         </p>

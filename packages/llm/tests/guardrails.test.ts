@@ -322,6 +322,6 @@ function words(count: number): string {
   return Array.from({ length: count }, (_, i) => `word${i}`).join(' ');
 }
 
-function byPath(a: { path: string }, b: { path: string }): number {
+function byPath(_a: { path: string }, _b: { path: string }): number {
   return 0; // stable: only used to compare set membership, not ordering
 }

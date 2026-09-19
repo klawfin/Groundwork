@@ -110,11 +110,11 @@ export function IntakeForm({
         <SaveStatus status={status} message={message} />
 
         {DIMENSIONS.map((dimension) => (
-          <section key={dimension.id} className="rounded-lg border border-stone-200 bg-white p-5">
+          <section key={dimension.id} className="rounded-card border border-line bg-surface p-5">
             <h2 className="text-base font-semibold">
               {dimension.id} · {dimension.name}
             </h2>
-            <p className="mt-0.5 text-xs text-stone-500">
+            <p className="mt-0.5 text-xs text-ink/55">
               Weight {Math.round(dimension.weight * 100)}% — {dimension.rationale}
             </p>
 
@@ -123,7 +123,7 @@ export function IntakeForm({
             </div>
 
             {/* Anchored judgments, rendered from the rubric. */}
-            <div className="mt-6 space-y-5 border-t border-stone-100 pt-4">
+            <div className="mt-6 space-y-5 border-t border-line pt-4">
               {dimension.subCriteria
                 .filter((s) => s.scoringKind === 'anchored')
                 .map((sub) => (
@@ -185,7 +185,7 @@ function AnchorPicker({
       <legend className="text-sm font-medium">
         {sub.id} {sub.label}
       </legend>
-      <p className="mt-0.5 text-xs text-stone-500">A 4 looks like: {sub.strongLooksLike}</p>
+      <p className="mt-0.5 text-xs text-ink/55">A 4 looks like: {sub.strongLooksLike}</p>
 
       <div className="mt-2 space-y-1">
         {([0, 1, 2, 3, 4] as AnchorScore[]).map((level) => (
@@ -193,8 +193,8 @@ function AnchorPicker({
             key={level}
             className={`flex cursor-pointer gap-2 rounded border p-2 text-xs ${
               value === level && !isNa
-                ? 'border-slate-700 bg-slate-50'
-                : 'border-stone-200 hover:bg-stone-50'
+                ? 'border-ink bg-ground'
+                : 'border-line hover:bg-ground'
             } ${isNa ? 'opacity-40' : ''}`}
           >
             <input
@@ -232,7 +232,7 @@ function AnchorPicker({
             value={naReason ?? ''}
             placeholder="Why does this not apply? (required)"
             onChange={(e) => onChange(sub.id, { na_reason: e.target.value })}
-            className="mt-1 w-full rounded border border-stone-300 px-2 py-1 text-xs"
+            className="mt-1 w-full rounded border border-line-strong px-2 py-1 text-xs"
           />
         )}
       </div>
@@ -422,7 +422,7 @@ function StructuredFields({
             value={intake.cap_table_legal.data_room_completeness_pct}
             onChange={(v) => update('cap_table_legal', { data_room_completeness_pct: v })}
           />
-          <p className="rounded bg-stone-50 p-2 text-xs text-stone-600">
+          <p className="rounded bg-ground p-2 text-xs text-ink/70">
             Cap-table holders are recorded as refs (F1, A1, ESOP) — never names. Klawfin must not
             hold personal financial data about people who never interacted with it.
           </p>
@@ -489,10 +489,10 @@ function Text({
         value={value ?? ''}
         maxLength={FREE_TEXT_MAX}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+        className="mt-1 w-full rounded border border-line-strong px-2 py-1.5 text-sm"
       />
       {/* Visible counter (PRD 8.6). Truncation is never silent. */}
-      <span className="text-xs text-stone-400">
+      <span className="text-xs text-ink/45">
         {used}/{FREE_TEXT_MAX}
       </span>
     </label>
@@ -515,7 +515,7 @@ function Num({
         type="number"
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-        className="mt-1 w-full rounded border border-stone-300 px-2 py-1.5 text-sm tabular-nums"
+        className="mt-1 w-full rounded border border-line-strong px-2 py-1.5 text-sm tabular-nums"
       />
     </label>
   );
@@ -555,7 +555,7 @@ function Select({
       <select
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+        className="mt-1 w-full rounded border border-line-strong px-2 py-1.5 text-sm"
       >
         <option value="">Not recorded</option>
         {options.map((o) => (
@@ -570,10 +570,10 @@ function Select({
 
 function SaveStatus({ status, message }: { status: string; message: string | null }) {
   if (status === 'error') {
-    return <p className="rounded bg-red-50 p-2 text-sm text-red-900">{message}</p>;
+    return <p className="rounded bg-critical p-2 text-sm text-on-inverse">{message}</p>;
   }
   return (
-    <p className="text-xs text-stone-500">
+    <p className="text-xs text-ink/55">
       {status === 'saving' ? 'Saving…' : status === 'saved' ? 'Draft saved' : 'Autosaves as you type'}
     </p>
   );

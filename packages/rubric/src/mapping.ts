@@ -700,13 +700,6 @@ const ENTITY_BASE_SCORE: Record<string, AnchorScore> = {
   other: 2,
 };
 
-const COMPLIANCE_SCORE: Record<string, number> = {
-  current: 3,
-  minor_lapses: 2,
-  material_lapses: 0,
-  unknown: 1,
-};
-
 const D5_RULES: ScoringRule[] = [
   {
     id: 'D5.1',

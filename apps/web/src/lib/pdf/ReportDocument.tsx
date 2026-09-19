@@ -40,7 +40,7 @@ import {
 import { ANCHOR_LABELS, formatPct, type ScoreResult, type PriorityGap } from '@klawfin/rubric';
 import type { NarrativeResponse } from '@klawfin/llm';
 
-import { color, space, styles, type } from './theme';
+import { space, styles, type } from './theme';
 
 export interface ReportProps {
   clientName: string;

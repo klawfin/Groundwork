@@ -19,7 +19,7 @@ export function StartAssessment({ clientId }: { clientId: string }) {
           if (result.ok) router.push(`/assessments/${result.data.assessmentId}`);
         })
       }
-      className="rounded-md bg-slate-800 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+      className="rounded-control bg-inverse px-3 py-2 text-sm font-medium text-on-inverse disabled:opacity-50"
     >
       {pending ? 'Starting…' : 'Start assessment'}
     </button>

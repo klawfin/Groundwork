@@ -32,7 +32,7 @@ import {
   type TokenUsage,
 } from './cost';
 import { narrativeResponseSchema, validateNarrativeResponse, type NarrativeResponse } from './schema';
-import { assemblePrompt, buildRepairMessage, type AssembledPrompt, type PromptFacts } from './prompt';
+import { assemblePrompt, buildRepairMessage, type PromptFacts } from './prompt';
 import { classifyOpenRouterError, openRouterTransport } from './openrouter';
 import type { ClassifiedError, GenerationFailureReason, Transport, TransportResult } from './transport';
 
@@ -262,6 +262,33 @@ export async function generateNarrative(
           schemaErrors: validated.errors,
         };
       }
+      // BUDGET RE-CHECK before spending again.
+      //
+      // `accumulated` was computed and never read, which meant the cost cap
+      // was enforced exactly once - before the first attempt - and a retry
+      // could carry total spend past it with nothing to stop it. PRD 6.6 asks
+      // for a hard abort over cap, not a hard abort over the first estimate.
+      const retryGate = preflight(
+        estimatedInput,
+        pricing,
+        accumulated,
+        options.costCapPaise,
+        MAX_OUTPUT_TOKENS,
+        usdInrRate,
+      );
+      if (!retryGate.withinCap) {
+        return {
+          ok: false,
+          reason: 'budget_exceeded',
+          message: `${retryGate.reason} The first attempt did not return a usable response and a retry would exceed the cap.`,
+          cost,
+          attempts,
+          // The scores are intact, so the fallback report is still worth having.
+          useFallback: true,
+          schemaErrors: validated.errors,
+        };
+      }
+
       repairFor = validated.errors;
     } catch (error) {
       const classified = classify(error);

@@ -56,9 +56,9 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
 
   if (!intakeLocked) {
     return (
-      <section className="rounded-lg border border-stone-200 bg-white p-4 text-sm">
+      <section className="rounded-card border border-line bg-surface p-4 text-sm">
         <h2 className="font-medium">Narrative</h2>
-        <p className="mt-2 text-stone-600">
+        <p className="mt-2 text-ink/70">
           Lock the intake first. A narrative written about numbers that can still change is not a
           record of anything.
         </p>
@@ -144,7 +144,7 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
   }
 
   return (
-    <section className="space-y-4 rounded-lg border border-stone-200 bg-white p-4 text-sm">
+    <section className="space-y-4 rounded-card border border-line bg-surface p-4 text-sm">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-medium">Narrative</h2>
         <div className="flex gap-2">
@@ -152,7 +152,7 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
             type="button"
             onClick={generate}
             disabled={busy !== null}
-            className="rounded bg-stone-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+            className="rounded bg-inverse px-3 py-1.5 text-xs font-medium text-on-inverse disabled:opacity-50"
           >
             {busy === 'generate'
               ? 'Generating...'
@@ -164,7 +164,7 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
             type="button"
             onClick={exportReport}
             disabled={busy !== null}
-            className="rounded border border-stone-300 px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+            className="rounded border border-line-strong px-3 py-1.5 text-xs font-medium disabled:opacity-50"
           >
             {busy === 'export' ? 'Exporting...' : 'Export report'}
           </button>
@@ -175,10 +175,10 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
         <p
           className={`rounded p-2 text-xs ${
             message.tone === 'ok'
-              ? 'bg-emerald-50 text-emerald-900'
+              ? 'bg-positive text-ink'
               : message.tone === 'warn'
-                ? 'bg-amber-50 text-amber-900'
-                : 'bg-red-50 text-red-900'
+                ? 'bg-warning text-ink'
+                : 'bg-critical text-on-inverse'
           }`}
         >
           {message.text}
@@ -186,7 +186,7 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
       )}
 
       {!narrative && (
-        <p className="text-stone-600">
+        <p className="text-ink/70">
           No narrative yet. Generating calls the model once, with one retry at most, and stops
           before the cost cap rather than after it.
         </p>
@@ -194,7 +194,7 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
 
       {narrative && draft && (
         <>
-          <dl className="grid grid-cols-2 gap-2 border-y border-stone-100 py-3 text-xs sm:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-2 border-y border-line py-3 text-xs sm:grid-cols-4">
             <Fact label="Version" value={String(narrative.version)} />
             <Fact label="Model" value={narrative.modelId} />
             <Fact
@@ -214,7 +214,7 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
           </dl>
 
           {narrative.isFallback && (
-            <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">
+            <p className="rounded bg-warning p-2 text-xs text-ink">
               This narrative was assembled offline from the computed scores, with no model
               involved. It is here so the workflow can be exercised without spending. It cannot be
               approved and will never be embedded in a client report.
@@ -223,7 +223,7 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
 
           {narrative.guardrailFindings.length > 0 && (
             <div>
-              <h3 className="text-xs font-medium uppercase tracking-wide text-stone-500">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-ink/55">
                 Guardrail findings
               </h3>
               <ul className="mt-2 space-y-1">
@@ -232,8 +232,8 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
                     key={`${finding.check}-${finding.path}-${i}`}
                     className={`rounded p-2 text-xs ${
                       finding.severity === 'block'
-                        ? 'bg-red-50 text-red-900'
-                        : 'bg-amber-50 text-amber-900'
+                        ? 'bg-critical text-on-inverse'
+                        : 'bg-warning text-ink'
                     }`}
                   >
                     <span className="font-medium">{finding.check}</span> · {finding.path}
@@ -259,7 +259,7 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
           />
 
           {draft.dimensions.map((dimension, index) => (
-            <div key={dimension.dimensionId} className="border-t border-stone-100 pt-3">
+            <div key={dimension.dimensionId} className="border-t border-line pt-3">
               <Editable
                 label={`${dimension.dimensionId} - what we observed`}
                 rows={5}
@@ -283,12 +283,12 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
             </div>
           ))}
 
-          <div className="flex flex-wrap gap-2 border-t border-stone-100 pt-3">
+          <div className="flex flex-wrap gap-2 border-t border-line pt-3">
             <button
               type="button"
               onClick={save}
               disabled={busy !== null}
-              className="rounded bg-stone-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+              className="rounded bg-inverse px-3 py-1.5 text-xs font-medium text-on-inverse disabled:opacity-50"
             >
               {busy === 'save' ? 'Saving...' : 'Save edits'}
             </button>
@@ -303,7 +303,7 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
                     ? 'Clear the blocking guardrail findings first.'
                     : undefined
               }
-              className="rounded border border-stone-300 px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+              className="rounded border border-line-strong px-3 py-1.5 text-xs font-medium disabled:opacity-50"
             >
               {busy === 'approve' ? 'Approving...' : 'Approve'}
             </button>
@@ -312,8 +312,8 @@ export function NarrativePanel({ assessmentId, intakeLocked, narrative, reports 
       )}
 
       {reports.length > 0 && (
-        <div className="border-t border-stone-100 pt-3">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-stone-500">
+        <div className="border-t border-line pt-3">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-ink/55">
             Reports
           </h3>
           <ul className="mt-2 space-y-1 text-xs">
@@ -380,7 +380,7 @@ function replaceDimension(draft: Draft, index: number, patch: Partial<DimensionD
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-stone-500">{label}</dt>
+      <dt className="text-ink/55">{label}</dt>
       <dd className="tabular-nums">{value}</dd>
     </div>
   );
@@ -399,12 +399,12 @@ function Editable({
 }) {
   return (
     <label className="mt-3 block">
-      <span className="text-xs font-medium uppercase tracking-wide text-stone-500">{label}</span>
+      <span className="text-xs font-medium uppercase tracking-wide text-ink/55">{label}</span>
       <textarea
         rows={rows}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded border border-stone-300 p-2 text-sm"
+        className="mt-1 w-full rounded border border-line-strong p-2 text-sm"
       />
     </label>
   );

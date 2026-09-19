@@ -8,7 +8,7 @@
     "dev": "pnpm --filter @klawfin/web dev",
     "build": "pnpm --filter @klawfin/web build",
     "start": "pnpm --filter @klawfin/web start",
-    "lint": "pnpm -r --if-present lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -18,9 +18,14 @@
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@next/eslint-plugin-next": "15.5.25",
     "@types/node": "^22.18.1",
     "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "15.5.25",
     "typescript": "^5.9.2",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^3.2.4"
   },
   "engines": {

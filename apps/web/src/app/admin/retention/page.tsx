@@ -28,7 +28,7 @@ export default async function RetentionPage() {
     return (
       <main className="mx-auto max-w-3xl px-6 py-12">
         <h1 className="text-xl font-semibold">Retention</h1>
-        <p className="mt-3 text-sm text-stone-600">
+        <p className="mt-3 text-sm text-ink/70">
           This view is restricted to the account owner.
         </p>
       </main>
@@ -38,14 +38,14 @@ export default async function RetentionPage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-8">
       <header className="mb-6">
-        <p className="text-xs uppercase tracking-wide text-stone-500">Admin</p>
+        <p className="text-xs uppercase tracking-wide text-ink/55">Admin</p>
         <h1 className="text-xl font-semibold">Retention</h1>
-        <p className="mt-2 text-sm text-stone-600">
+        <p className="mt-2 text-sm text-ink/70">
           Purging is field-level, never row-level. A report&apos;s PDF is destroyed; the row
           recording that it was delivered, and its sha256, survive — Klawfin needs that for its
           own defence.
         </p>
-        <p className="mt-2 text-xs text-stone-500">
+        <p className="mt-2 text-xs text-ink/55">
           LLM request and response bodies purge at 90 days; everything else at 24 months. Those
           periods are proposed and still need confirming by counsel (PRD OPEN-08). A client on
           legal hold is never purged.

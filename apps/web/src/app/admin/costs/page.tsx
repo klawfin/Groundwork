@@ -24,6 +24,7 @@ import {
 } from '@klawfin/llm';
 
 import { canViewCosts, resolveActor } from '@/lib/auth/session';
+import { Chip, PageHeader, Stat } from '../../ui';
 import { serverClient } from '@/lib/db/client';
 
 export const dynamic = 'force-dynamic';
@@ -40,7 +41,7 @@ export default async function CostsPage() {
     return (
       <main className="mx-auto max-w-3xl px-6 py-12">
         <h1 className="text-xl font-semibold">Costs</h1>
-        <p className="mt-3 text-sm text-stone-600">
+        <p className="mt-3 text-sm text-ink/70">
           This view is restricted to the account owner.
         </p>
       </main>
@@ -68,15 +69,14 @@ export default async function CostsPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-8">
-      <header className="mb-6">
-        <p className="text-xs uppercase tracking-wide text-stone-500">Admin</p>
-        <h1 className="text-xl font-semibold">Cost and usage</h1>
-        <p className="mt-1 text-xs text-stone-500">
+      <PageHeader eyebrow="Admin" title="Cost and usage" />
+      <div className="mb-6 -mt-4">
+        <p className="text-xs leading-relaxed text-ink/60">
           Last {RECENT_LIMIT} generations. Soft target {formatPaise(SOFT_TARGET_PAISE)} per report;
           hard cap {formatPaise(DEFAULT_COST_CAP_PAISE)}, enforced before the call rather than
           after it.
         </p>
-      </header>
+      </div>
 
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Stat label="Billable reports" value={String(stats.count)} />
@@ -86,26 +86,26 @@ export default async function CostsPage() {
         <Stat
           label="Over soft target"
           value={String(stats.overTargetCount)}
-          tone={stats.overTargetCount > 0 ? 'warn' : 'plain'}
+          tone={stats.overTargetCount > 0 ? 'warning' : undefined}
         />
       </section>
 
       <section className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat label="Generations shown" value={String(rows.length)} />
-        <Stat label="Needed a retry" value={String(retried)} tone={retried > 0 ? 'warn' : 'plain'} />
-        <Stat label="Failed or capped" value={String(failed)} tone={failed > 0 ? 'warn' : 'plain'} />
+        <Stat label="Needed a retry" value={String(retried)} tone={retried > 0 ? 'warning' : undefined} />
+        <Stat label="Failed or capped" value={String(failed)} tone={failed > 0 ? 'warning' : undefined} />
       </section>
 
       <section className="mt-8">
         <h2 className="text-sm font-medium">Recent generations</h2>
         {rows.length === 0 ? (
-          <p className="mt-2 text-sm text-stone-600">
+          <p className="mt-2 text-sm text-ink/70">
             Nothing generated yet. Offline runs cost nothing and do not appear here.
           </p>
         ) : (
-          <div className="mt-2 overflow-x-auto rounded-lg border border-stone-200 bg-white">
+          <div className="mt-2 overflow-x-auto rounded-card border border-line bg-surface">
             <table className="w-full text-left text-xs">
-              <thead className="border-b border-stone-200 text-stone-500">
+              <thead className="border-b border-line text-ink/55">
                 <tr>
                   <Th>When</Th>
                   <Th>Assessment</Th>
@@ -117,7 +117,7 @@ export default async function CostsPage() {
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id} className="border-b border-stone-100 last:border-0">
+                  <tr key={row.id} className="border-b border-line last:border-0">
                     <Td>{row.created_at.slice(0, 16).replace('T', ' ')}</Td>
                     <Td>
                       <a
@@ -130,12 +130,15 @@ export default async function CostsPage() {
                     <Td>{row.outcome.replace(/_/g, ' ')}</Td>
                     <Td>{row.attempts}</Td>
                     <Td>{row.latency_ms === null ? '-' : `${(row.latency_ms / 1000).toFixed(1)}s`}</Td>
-                    <Td
-                      className={
-                        exceedsSoftTarget(row.total_cost_paise) ? 'text-amber-700' : undefined
-                      }
-                    >
-                      {formatPaise(row.total_cost_paise)}
+                    <Td>
+                      {/* Over-target is a CHIP, not coloured text. Orange text
+                          on Soft White is 2.22:1 and unreadable; orange as a
+                          fill with navy on it is 6.39:1. */}
+                      {exceedsSoftTarget(row.total_cost_paise) ? (
+                        <Chip tone="warning">{formatPaise(row.total_cost_paise)}</Chip>
+                      ) : (
+                        formatPaise(row.total_cost_paise)
+                      )}
                     </Td>
                   </tr>
                 ))}
@@ -145,27 +148,6 @@ export default async function CostsPage() {
         )}
       </section>
     </main>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  tone = 'plain',
-}: {
-  label: string;
-  value: string;
-  tone?: 'plain' | 'warn';
-}) {
-  return (
-    <div
-      className={`rounded-lg border p-3 ${
-        tone === 'warn' ? 'border-amber-200 bg-amber-50' : 'border-stone-200 bg-white'
-      }`}
-    >
-      <p className="text-xs text-stone-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
-    </div>
   );
 }
 

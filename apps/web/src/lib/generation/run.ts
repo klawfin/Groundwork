@@ -37,7 +37,6 @@ import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { scoreIntake } from '@klawfin/rubric';
-import type { ScoreResult } from '@klawfin/rubric';
 import {
   assessCoverage,
   checkContradictions,

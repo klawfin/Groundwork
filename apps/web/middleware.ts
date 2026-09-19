@@ -73,6 +73,9 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // Everything except static assets and the favicon.
-    '/((?!_next/static|_next/image|favicon.ico|robots.txt|.*\.(?:svg|png|jpg|jpeg|gif|webp|woff2?)$).*)',
+    // The dot is DOUBLE-escaped on purpose. In a JS string literal '\.' is
+    // just '.', so the pattern received "any character" where a literal dot
+    // was meant - '/imagesvg' would have matched as readily as '/image.svg'.
+    '/((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2?)$).*)',
   ],
 };
