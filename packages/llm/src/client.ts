@@ -28,10 +28,15 @@ import {
   pricingFor,
   USD_INR_RATE,
   type CostBreakdown,
+  type ModelPricing,
   type TokenUsage,
 } from './cost';
 import { narrativeResponseSchema, validateNarrativeResponse, type NarrativeResponse } from './schema';
 import { assemblePrompt, buildRepairMessage, type AssembledPrompt, type PromptFacts } from './prompt';
+import { classifyOpenRouterError, openRouterTransport } from './openrouter';
+import type { ClassifiedError, GenerationFailureReason, Transport, TransportResult } from './transport';
+
+export type { GenerationFailureReason, Transport, TransportResult } from './transport';
 
 /**
  * Default model.
@@ -60,8 +65,19 @@ export const DEFAULT_MODEL_ID = 'claude-opus-5';
  */
 export const ENABLE_PROMPT_CACHING = false;
 
+/**
+ * Which service to call.
+ *
+ * Config-time, not a runtime failover. A generation that failed against one
+ * provider and silently retried against another would bill twice and break the
+ * "maximum one retry, never a loop" rule (PRD 6.6) - so the provider is chosen
+ * before anything is spent, and the choice is recorded on the report.
+ */
+export type ProviderId = 'anthropic' | 'openrouter';
+
 export interface GenerateOptions {
   facts: PromptFacts;
+  provider?: ProviderId;
   modelId?: string;
   /** Paise already spent on this report, retries included. */
   cumulativeCostPaise?: number;
@@ -70,16 +86,16 @@ export interface GenerateOptions {
   /** Per-call timeout, comfortably below the platform function limit. */
   timeoutMs?: number;
   apiKey?: string;
+  /**
+   * Pricing for the pre-flight gate.
+   *
+   * Required for OpenRouter, whose model prices are configuration rather than
+   * a checked-in table. Omitted for Anthropic, which looks its own up.
+   */
+  pricing?: ModelPricing;
+  /** Overrides the transport entirely. Used by tests; no production caller. */
+  transport?: Transport;
 }
-
-export type GenerationFailureReason =
-  | 'budget_exceeded'
-  | 'schema_invalid'
-  | 'rate_limited'
-  | 'timeout'
-  | 'api_error'
-  | 'refusal'
-  | 'max_tokens';
 
 /** Typed failure. Rendered by the UI; never thrown into a blank screen. */
 export interface GenerationFailure {
@@ -97,6 +113,7 @@ export interface GenerationFailure {
 export interface GenerationSuccess {
   ok: true;
   response: NarrativeResponse;
+  provider: ProviderId;
   cost: CostBreakdown;
   usage: TokenUsage;
   modelId: string;
@@ -127,8 +144,9 @@ export async function generateNarrative(
   options: GenerateOptions,
   clock: Clock = systemClock,
 ): Promise<GenerationResult> {
-  const modelId = options.modelId ?? DEFAULT_MODEL_ID;
-  const pricing = pricingFor(modelId);
+  const provider: ProviderId = options.provider ?? 'anthropic';
+  const modelId = options.modelId ?? (provider === 'anthropic' ? DEFAULT_MODEL_ID : '');
+  const pricing = options.pricing ?? pricingFor(modelId);
   const usdInrRate = options.usdInrRate ?? USD_INR_RATE;
   const cumulative = options.cumulativeCostPaise ?? 0;
 
@@ -148,14 +166,27 @@ export async function generateNarrative(
     };
   }
 
-  const client = new Anthropic({
-    ...(options.apiKey ? { apiKey: options.apiKey } : {}),
-    // Below the platform function limit so our own timeout fires first: a
-    // request killed by the platform gives no error body and no ledger row,
-    // one killed by us gives both (architecture 4.5).
-    timeout: options.timeoutMs ?? 90_000,
-    maxRetries: 0, // retries are orchestrated here, so every attempt is billed visibly
-  });
+  // Below the platform function limit so our own timeout fires first: a
+  // request killed by the platform gives no error body and no ledger row, one
+  // killed by us gives both (architecture 4.5).
+  const timeoutMs = options.timeoutMs ?? 90_000;
+
+  const transport =
+    options.transport ??
+    (provider === 'openrouter'
+      ? openRouterTransport({
+          apiKey: options.apiKey ?? '',
+          modelId,
+          maxTokens: MAX_OUTPUT_TOKENS,
+          timeoutMs,
+        })
+      : anthropicTransport({
+          apiKey: options.apiKey,
+          modelId,
+          timeoutMs,
+        }));
+
+  const classify = provider === 'openrouter' ? classifyOpenRouterError : classifyAnthropicError;
 
   const started = clock.now();
   let attempts = 0;
@@ -167,21 +198,22 @@ export async function generateNarrative(
     attempts += 1;
 
     try {
-      const message = await callModel(client, prompt, modelId, repairFor);
+      const message: TransportResult = await transport(prompt, repairFor, buildRepairMessage);
 
-      const usage: TokenUsage = {
-        inputTokens: message.usage.input_tokens,
-        outputTokens: message.usage.output_tokens,
-        cacheCreationTokens: message.usage.cache_creation_input_tokens ?? 0,
-        cacheReadTokens: message.usage.cache_read_input_tokens ?? 0,
-      };
-      const cost = computeCost(usage, pricing, usdInrRate);
+      const usage = message.usage;
+      // An exact figure from the biller beats a local calculation against a
+      // pricing table that can go stale. OpenRouter reports one; Anthropic
+      // does not, and falls back to the computed estimate.
+      const cost =
+        message.reportedCostUsd === null
+          ? computeCost(usage, pricing, usdInrRate)
+          : costFromReportedUsd(message.reportedCostUsd, usage, pricing, usdInrRate);
       lastCost = cost;
       accumulated += cost.totalPaise;
 
       // A refusal or a truncation is not a schema problem and must not be
       // retried as one.
-      if (message.stop_reason === 'refusal') {
+      if (message.stopReason === 'refusal') {
         return {
           ok: false,
           reason: 'refusal',
@@ -191,7 +223,7 @@ export async function generateNarrative(
           useFallback: true,
         };
       }
-      if (message.stop_reason === 'max_tokens') {
+      if (message.stopReason === 'max_tokens') {
         return {
           ok: false,
           reason: 'max_tokens',
@@ -202,18 +234,19 @@ export async function generateNarrative(
         };
       }
 
-      const validated = validateNarrativeResponse(message.parsed_output);
+      const validated = validateNarrativeResponse(message.parsedOutput);
       if (validated.ok && validated.data) {
         return {
           ok: true,
           response: validated.data,
+          provider,
           cost,
           usage,
           modelId,
           promptVersion: prompt.promptVersion,
           attempts,
           latencyMs: clock.now() - started,
-          raw: message.parsed_output,
+          raw: message.parsedOutput,
         };
       }
 
@@ -231,7 +264,7 @@ export async function generateNarrative(
       }
       repairFor = validated.errors;
     } catch (error) {
-      const classified = classifyError(error);
+      const classified = classify(error);
 
       if (attempts > MAX_RETRIES || !classified.retryable) {
         return {
@@ -260,37 +293,76 @@ export async function generateNarrative(
   };
 }
 
-async function callModel(
-  client: Anthropic,
-  prompt: AssembledPrompt,
-  modelId: string,
-  repairFor: readonly string[] | null,
-) {
-  const system = ENABLE_PROMPT_CACHING
-    ? [{ type: 'text' as const, text: prompt.system, cache_control: { type: 'ephemeral' as const } }]
-    : prompt.system;
-
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt.user }];
-  if (repairFor) {
-    // The repair turn restates the failure rather than starting a new
-    // conversation, so the model sees what it produced and what was wrong.
-    messages.push({ role: 'assistant', content: '(previous response omitted - it failed validation)' });
-    messages.push({ role: 'user', content: buildRepairMessage(repairFor) });
-  }
-
-  return client.messages.parse({
-    model: modelId,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    system,
-    messages,
-    output_config: { format: zodOutputFormat(narrativeResponseSchema) },
+/** Anthropic transport. One request, nothing else. */
+function anthropicTransport(config: {
+  apiKey: string | undefined;
+  modelId: string;
+  timeoutMs: number;
+}): Transport {
+  const client = new Anthropic({
+    ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+    timeout: config.timeoutMs,
+    maxRetries: 0, // retries are orchestrated in generateNarrative, so every attempt is billed visibly
   });
+
+  return async (prompt, repairFor, repairMessage) => {
+    const system = ENABLE_PROMPT_CACHING
+      ? [{ type: 'text' as const, text: prompt.system, cache_control: { type: 'ephemeral' as const } }]
+      : prompt.system;
+
+    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt.user }];
+    if (repairFor) {
+      // The repair turn restates the failure rather than starting a new
+      // conversation, so the model sees what it produced and what was wrong.
+      messages.push({
+        role: 'assistant',
+        content: '(previous response omitted - it failed validation)',
+      });
+      messages.push({ role: 'user', content: repairMessage(repairFor) });
+    }
+
+    const message = await client.messages.parse({
+      model: config.modelId,
+      max_tokens: MAX_OUTPUT_TOKENS,
+      system,
+      messages,
+      output_config: { format: zodOutputFormat(narrativeResponseSchema) },
+    });
+
+    return {
+      parsedOutput: message.parsed_output,
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens,
+        cacheCreationTokens: message.usage.cache_creation_input_tokens ?? 0,
+        cacheReadTokens: message.usage.cache_read_input_tokens ?? 0,
+      },
+      stopReason: message.stop_reason,
+      // Anthropic does not report a cost; it is computed from the pricing table.
+      reportedCostUsd: null,
+      requestId: message.id ?? null,
+    };
+  };
 }
 
-interface ClassifiedError {
-  reason: GenerationFailureReason;
-  message: string;
-  retryable: boolean;
+/**
+ * Build a cost breakdown around a provider-reported total.
+ *
+ * The input/output split is still computed from the pricing table so the
+ * breakdown stays readable, but the TOTAL is the reported figure - that is the
+ * number that will appear on the bill, and the ledger exists to match the bill.
+ */
+function costFromReportedUsd(
+  reportedUsd: number,
+  usage: TokenUsage,
+  pricing: ModelPricing,
+  usdInrRate: number,
+): CostBreakdown {
+  const computed = computeCost(usage, pricing, usdInrRate);
+  return {
+    ...computed,
+    totalPaise: Math.round(reportedUsd * usdInrRate * 100),
+  };
 }
 
 /**
@@ -300,7 +372,7 @@ interface ClassifiedError {
  * 401/403 (key), 404 (model id). Retrying a bad request wastes money and time
  * and cannot succeed (architecture 4.5).
  */
-function classifyError(error: unknown): ClassifiedError {
+function classifyAnthropicError(error: unknown): ClassifiedError {
   if (error instanceof Anthropic.APIConnectionTimeoutError) {
     return { reason: 'timeout', message: 'The request to Anthropic timed out.', retryable: true };
   }

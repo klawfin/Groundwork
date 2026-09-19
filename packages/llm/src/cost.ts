@@ -75,6 +75,34 @@ export const PRICING: Readonly<Record<string, ModelPricing>> = {
   },
 };
 
+/**
+ * Pricing for an OpenRouter model, supplied by configuration.
+ *
+ * OpenRouter fronts hundreds of models at prices that move, so a checked-in
+ * table would be wrong within weeks and the cost ledger would quietly lie.
+ * The rates come from the environment instead, which keeps the "never guess a
+ * price" rule intact without pretending to track someone else's price list.
+ *
+ * These rates are used ONLY for the pre-flight gate. The figure recorded on
+ * the ledger afterwards is the exact cost OpenRouter reports for the call.
+ * Cache rates mirror the base rates because OpenRouter does not expose a cache
+ * token split, and caching is off in Phase 1 regardless (ADR-008).
+ */
+export function openRouterPricing(
+  modelId: string,
+  inputUsdPerMTok: number,
+  outputUsdPerMTok: number,
+): ModelPricing {
+  return {
+    pricingVersion: 'openrouter-env-configured',
+    modelId,
+    inputUsdPerMTok,
+    outputUsdPerMTok,
+    cacheWriteUsdPerMTok: inputUsdPerMTok,
+    cacheReadUsdPerMTok: inputUsdPerMTok,
+  };
+}
+
 export function pricingFor(modelId: string): ModelPricing {
   const row = PRICING[modelId];
   if (!row) {

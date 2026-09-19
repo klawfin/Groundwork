@@ -10,6 +10,8 @@ export * from './schema';
 export * from './guardrails';
 export * from './cost';
 export * from './prompt';
+export * from './transport';
+export * from './openrouter';
 export * from './client';
 export * from './editMagnitude';
 export * from './stub';

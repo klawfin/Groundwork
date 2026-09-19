@@ -48,11 +48,13 @@ import {
 import {
   assemblePrompt,
   generateNarrative,
+  openRouterPricing,
   runGuardrails,
   stubNarrative,
   type GuardrailFinding,
   type NarrativeResponse,
   type PromptFacts,
+  type ProviderId,
 } from '@klawfin/llm';
 
 import { writeAudit, type AuditContext } from '../audit/log';
@@ -188,6 +190,11 @@ export async function runGeneration(
     truncationNotices: [],
   };
 
+  // Offline when explicitly disabled, and also when no provider is configured
+  // at all. Falling back to the stub beats failing with "no API key" on a
+  // machine that was never going to have one.
+  const offline = env.DISABLE_LLM_GENERATION || env.provider === 'none';
+
   await db.from('assessments').update({ status: 'generating' }).eq('id', assessmentId);
 
   await writeAudit(db, {
@@ -197,8 +204,13 @@ export async function runGeneration(
     entityId: assessmentId,
     clientId: assessment.client_id,
     metadata: {
-      offline: env.DISABLE_LLM_GENERATION,
-      model_id: env.DISABLE_LLM_GENERATION ? 'none' : env.ANTHROPIC_MODEL_ID,
+      offline,
+      provider: offline ? 'offline' : env.provider,
+      model_id: offline
+        ? 'none'
+        : env.provider === 'openrouter'
+          ? env.OPENROUTER_MODEL_ID
+          : env.ANTHROPIC_MODEL_ID,
       rubric_version: score.rubricVersion,
       composite: score.composite,
       coverage_pct: Math.round(score.overallCoverage * 100),
@@ -208,13 +220,24 @@ export async function runGeneration(
 
   /* --- Generate --------------------------------------------------------- */
 
-  const produced = env.DISABLE_LLM_GENERATION
+  const produced = offline
     ? offlineNarrative(facts)
     : await liveNarrative(db, {
         assessmentId,
         facts,
-        modelId: env.ANTHROPIC_MODEL_ID,
-        apiKey: env.ANTHROPIC_API_KEY,
+        provider: env.provider === 'openrouter' ? 'openrouter' : 'anthropic',
+        modelId:
+          env.provider === 'openrouter' ? env.OPENROUTER_MODEL_ID : env.ANTHROPIC_MODEL_ID,
+        apiKey:
+          env.provider === 'openrouter' ? env.OPENROUTER_API_KEY : env.ANTHROPIC_API_KEY,
+        pricing:
+          env.provider === 'openrouter'
+            ? openRouterPricing(
+                env.OPENROUTER_MODEL_ID,
+                env.OPENROUTER_INPUT_USD_PER_MTOK,
+                env.OPENROUTER_OUTPUT_USD_PER_MTOK,
+              )
+            : undefined,
         costCapPaise: assessment.cost_cap_paise || env.reportCostCapPaise,
         alreadySpentPaise: assessment.cost_actual_paise,
         usdInrRate: env.USD_INR_RATE,
@@ -408,8 +431,10 @@ function offlineNarrative(facts: PromptFacts): Produced {
 interface LiveInput {
   assessmentId: string;
   facts: PromptFacts;
+  provider: ProviderId;
   modelId: string;
   apiKey: string | undefined;
+  pricing: Parameters<typeof generateNarrative>[0]['pricing'];
   costCapPaise: number;
   alreadySpentPaise: number;
   usdInrRate: number;
@@ -421,7 +446,7 @@ async function liveNarrative(db: Db, input: LiveInput): Promise<Produced> {
       ok: false,
       outcome: 'failed',
       message:
-        'ANTHROPIC_API_KEY is not configured. Set it, or set DISABLE_LLM_GENERATION=true to run offline.',
+        'No provider API key is configured. Set ANTHROPIC_API_KEY or OPENROUTER_API_KEY, or set DISABLE_LLM_GENERATION=true to run offline.',
       costPaise: 0,
       attempts: 0,
       latencyMs: null,
@@ -442,7 +467,7 @@ async function liveNarrative(db: Db, input: LiveInput): Promise<Produced> {
       prompt_version: prompt.promptVersion,
       system_prompt_sha256: sha256(prompt.system),
       prompt_sha256: sha256(prompt.user),
-      pricing_version: 'pricing-2026-09',
+      pricing_version: input.pricing?.pricingVersion ?? 'pricing-2026-09',
       usd_inr_rate: input.usdInrRate,
       status: 'pending',
     })
@@ -451,8 +476,10 @@ async function liveNarrative(db: Db, input: LiveInput): Promise<Produced> {
 
   const result = await generateNarrative({
     facts: input.facts,
+    provider: input.provider,
     modelId: input.modelId,
     apiKey: input.apiKey,
+    pricing: input.pricing,
     costCapPaise: input.costCapPaise,
     cumulativeCostPaise: input.alreadySpentPaise,
     usdInrRate: input.usdInrRate,

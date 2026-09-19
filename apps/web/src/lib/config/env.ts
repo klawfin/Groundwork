@@ -71,6 +71,28 @@ export const serverSchema = z.object({
   ANTHROPIC_MODEL_ID: z.string().min(1).default('claude-opus-5'),
 
   /**
+   * OpenRouter, used when no Anthropic key is configured.
+   *
+   * The choice is made at CONFIGURATION time, not as a runtime failover. A
+   * generation that failed against one provider and silently retried against
+   * another would bill twice and break the "maximum one retry, never a loop"
+   * rule (PRD 6.6).
+   */
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
+  OPENROUTER_MODEL_ID: z.string().min(1).default('anthropic/claude-sonnet-4.5'),
+
+  /**
+   * Rates for the PRE-FLIGHT cost gate only; the ledger records the exact cost
+   * OpenRouter reports afterwards. They are configuration rather than a
+   * checked-in table because OpenRouter fronts hundreds of models at prices
+   * that move, and a stale table would make the cost ledger lie.
+   *
+   * Check them against https://openrouter.ai/models for your chosen model.
+   */
+  OPENROUTER_INPUT_USD_PER_MTOK: z.coerce.number().nonnegative().default(3),
+  OPENROUTER_OUTPUT_USD_PER_MTOK: z.coerce.number().nonnegative().default(15),
+
+  /**
    * The authorisation boundary for the whole application in Phase 1,
    * alongside the database trigger. Comma-separated.
    */
@@ -99,6 +121,8 @@ export type ServerEnv = z.infer<typeof serverSchema> & {
   allowedEmails: readonly string[];
   /** Cost cap in paise - the unit the ledger actually uses. */
   reportCostCapPaise: number;
+  /** Which service generation will call. 'none' means offline only. */
+  provider: 'anthropic' | 'openrouter' | 'none';
 };
 
 /**
@@ -130,7 +154,8 @@ export function parseServerEnv(source: NodeJS.ProcessEnv = process.env): ServerE
     if (typeof value !== 'string' || value.length === 0) continue;
     if (
       value === parsed.data.SUPABASE_SERVICE_ROLE_KEY ||
-      (parsed.data.ANTHROPIC_API_KEY && value === parsed.data.ANTHROPIC_API_KEY)
+      (parsed.data.ANTHROPIC_API_KEY && value === parsed.data.ANTHROPIC_API_KEY) ||
+      (parsed.data.OPENROUTER_API_KEY && value === parsed.data.OPENROUTER_API_KEY)
     ) {
       throw new Error(
         `${key} contains a value identical to a server secret. Anything prefixed NEXT_PUBLIC_ is in the browser bundle. Rotate that credential - it is compromised.`,
@@ -142,10 +167,20 @@ export function parseServerEnv(source: NodeJS.ProcessEnv = process.env): ServerE
     throw new Error('LOG_LEVEL must never be debug in production - debug logs client financials.');
   }
 
+  // Resolved once, here, so no call site has to re-derive it and reach a
+  // different answer. Anthropic wins when both are set: it is the provider the
+  // prompt and the structured-output path were built against.
+  const provider: 'anthropic' | 'openrouter' | 'none' = parsed.data.ANTHROPIC_API_KEY
+    ? 'anthropic'
+    : parsed.data.OPENROUTER_API_KEY
+      ? 'openrouter'
+      : 'none';
+
   return {
     ...parsed.data,
     allowedEmails,
     reportCostCapPaise: Math.round(parsed.data.REPORT_COST_CAP_INR * 100),
+    provider,
   };
 }
 
