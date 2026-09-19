@@ -29,6 +29,7 @@ export type AssessmentStatus =
 export type ReportTier = 'summary' | 'full';
 export type LlmPurpose = 'narrative' | 'repair';
 export type RetentionPolicy = 'standard_24m' | 'short_90d' | 'legal_hold';
+export type DeletionStatus = 'requested' | 'approved' | 'executed' | 'rejected';
 export type GenerationOutcome =
   | 'success'
   | 'success_after_retry'
@@ -231,6 +232,27 @@ export type ContradictionDismissalRow = {
   dismissed_at: string;
 }
 
+/**
+ * A client's request to have their data deleted (P1-11, PRD 10.6).
+ *
+ * A row here is a record that the request was MADE, and it outlives the data
+ * it concerns: after execution the client row is gone and this remains, which
+ * is the only way to answer "did you action that request, and when".
+ */
+export type DeletionRequestRow = {
+  id: string;
+  client_id: string;
+  requested_by: string;
+  requester_email: string | null;
+  reason: string | null;
+  status: DeletionStatus;
+  approved_by: string | null;
+  approved_at: string | null;
+  executed_at: string | null;
+  execution_note: string | null;
+  created_at: string;
+}
+
 export type AuditLogRow = {
   id: number;
   occurred_at: string;
@@ -279,10 +301,30 @@ export interface Database {
       llm_calls: Table<LlmCallRow>;
       generations: Table<GenerationRow>;
       contradiction_dismissals: Table<ContradictionDismissalRow>;
+      deletion_requests: Table<DeletionRequestRow>;
       audit_log: Table<AuditLogRow>;
     };
     Views: Empty;
-    Functions: Empty;
+    Functions: {
+      /**
+       * Deletes a client and everything cascading from it, and RETURNS the
+       * storage objects the caller must then remove.
+       *
+       * A SQL function cannot reach the storage bucket, so deletion is only
+       * half done when this returns. See lib/db/deletion.ts for the other
+       * half - a deletion that leaves the PDFs in the bucket is not a
+       * deletion.
+       */
+      execute_client_deletion: {
+        Args: { target_client_id: string; actor: string };
+        Returns: { storage_bucket: string; storage_path: string }[];
+      };
+      /** Field-level retention purge. `dry_run` defaults to true. */
+      run_retention_purge: {
+        Args: { dry_run?: boolean };
+        Returns: { entity_type: string; entity_id: string; action: string }[];
+      };
+    };
     Enums: {
       user_role: UserRole;
       client_source: ClientSource;

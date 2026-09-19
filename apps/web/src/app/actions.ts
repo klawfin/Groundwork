@@ -21,8 +21,10 @@ import { scoreIntake } from '@klawfin/rubric';
 import { checkContradictions } from '@klawfin/validation';
 import { editMagnitude, runGuardrails, type NarrativeResponse } from '@klawfin/llm';
 
-import { resolveActor, canWrite, type Actor } from '../lib/auth/session';
+import { resolveActor, canWrite, canViewCosts, type Actor } from '../lib/auth/session';
 import { serverClient } from '../lib/db/client';
+import { admin } from '../lib/db/admin';
+import { executeClientDeletion } from '../lib/db/deletion';
 import { writeAudit, type AuditContext } from '../lib/audit/log';
 import {
   createAssessment,
@@ -586,4 +588,166 @@ export async function overrideCoverageAction(
 
   revalidatePath(`/assessments/${parsed.data.assessmentId}`);
   return { ok: true, data: { overriddenAt } };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Client lifecycle (P1-11, PRD 10.6)                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Archive a client.
+ *
+ * Soft. The engagement is over, the record stays. This is the common case and
+ * it is deliberately the easy one to reach, so that deletion - which is not
+ * reversible - is never chosen merely because it was the nearer button.
+ */
+export async function archiveClientAction(
+  clientId: unknown,
+): Promise<ActionResult<{ archivedAt: string }>> {
+  const auth = await authorise();
+  if (!auth.ok) return auth;
+
+  const id = z.string().uuid().safeParse(clientId);
+  if (!id.success) return { ok: false, error: 'Unknown client.' };
+
+  const archivedAt = new Date().toISOString();
+  const { error } = await auth.db
+    .from('clients')
+    .update({ archived_at: archivedAt })
+    .eq('id', id.data);
+
+  if (error) return { ok: false, error: 'The client could not be archived.' };
+
+  await writeAudit(auth.db, {
+    ...auth.audit,
+    action: 'client.archived',
+    entityType: 'client',
+    entityId: id.data,
+    clientId: id.data,
+    metadata: {},
+  });
+
+  revalidatePath('/clients');
+  revalidatePath(`/clients/${id.data}`);
+  return { ok: true, data: { archivedAt } };
+}
+
+/**
+ * Record a deletion request.
+ *
+ * Recording and executing are separate steps on purpose. The request is
+ * evidence that someone asked; the execution is the irreversible act. Keeping
+ * them apart means a request can be logged the moment it arrives - which is
+ * what the statutory clock runs on - without anyone having to decide, in that
+ * same minute, to destroy a paying client's file.
+ */
+export async function requestClientDeletionAction(
+  clientId: unknown,
+  input: unknown,
+): Promise<ActionResult<{ requestId: string }>> {
+  const auth = await authorise();
+  if (!auth.ok) return auth;
+
+  const parsed = z
+    .object({
+      clientId: z.string().uuid(),
+      requestedBy: z.enum(['data_principal', 'klawfin_internal']),
+      requesterEmail: z.string().trim().email().max(200).optional().nullable(),
+      reason: z.string().trim().min(MIN_REASON, 'Record what was asked for, and by whom.').max(1000),
+    })
+    .safeParse({ clientId, ...(typeof input === 'object' && input !== null ? input : {}) });
+
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'The request could not be read.' };
+  }
+
+  const { data: row, error } = await auth.db
+    .from('deletion_requests')
+    .insert({
+      client_id: parsed.data.clientId,
+      requested_by: parsed.data.requestedBy,
+      requester_email: parsed.data.requesterEmail ?? null,
+      reason: parsed.data.reason,
+      status: 'requested',
+    })
+    .select('id')
+    .single();
+
+  if (error || !row) return { ok: false, error: 'The deletion request could not be recorded.' };
+
+  await writeAudit(auth.db, {
+    ...auth.audit,
+    action: 'deletion.requested',
+    entityType: 'client',
+    entityId: parsed.data.clientId,
+    clientId: parsed.data.clientId,
+    // Who asked and in what capacity. Not the reason text, which may quote the
+    // client's own words about their business.
+    metadata: { requested_by: parsed.data.requestedBy, request_id: row.id },
+  });
+
+  revalidatePath(`/clients/${parsed.data.clientId}`);
+  return { ok: true, data: { requestId: row.id } };
+}
+
+/**
+ * Execute a recorded deletion request. IRREVERSIBLE.
+ *
+ * Owner only, and only against a request that already exists. Both conditions
+ * are the point: deletion cannot be reached by a single click from a single
+ * account, and every execution has a written request behind it.
+ *
+ * Runs through the service-role client because the rows being deleted are
+ * exactly the rows RLS protects, and because clearing the storage bucket is
+ * one of the operations RLS cannot express.
+ */
+export async function executeDeletionAction(
+  requestId: unknown,
+): Promise<ActionResult<{ message: string; orphanedPaths: string[] }>> {
+  const auth = await authorise();
+  if (!auth.ok) return auth;
+
+  if (!canViewCosts(auth.actor)) {
+    return { ok: false, error: 'Only the account owner can execute a deletion.' };
+  }
+
+  const id = z.string().uuid().safeParse(requestId);
+  if (!id.success) return { ok: false, error: 'Unknown deletion request.' };
+
+  const { data: request } = await auth.db
+    .from('deletion_requests')
+    .select('id, client_id, status')
+    .eq('id', id.data)
+    .maybeSingle();
+
+  if (!request) return { ok: false, error: 'Deletion request not found.' };
+  if (request.status === 'executed') {
+    return { ok: false, error: 'That request has already been executed.' };
+  }
+  if (request.status === 'rejected') {
+    return { ok: false, error: 'That request was rejected. Record a new one if it has changed.' };
+  }
+
+  const service = admin();
+  const outcome = await executeClientDeletion(service, service, request.client_id, auth.actor.id);
+
+  if (!outcome.rowsDeleted) {
+    return { ok: false, error: outcome.message };
+  }
+
+  // The request row survives its client: it is the record that the deletion
+  // happened, and the only remaining place that says so.
+  await service
+    .from('deletion_requests')
+    .update({
+      status: 'executed',
+      approved_by: auth.actor.id,
+      approved_at: new Date().toISOString(),
+      executed_at: new Date().toISOString(),
+      execution_note: outcome.message,
+    })
+    .eq('id', id.data);
+
+  revalidatePath('/clients');
+  return { ok: true, data: { message: outcome.message, orphanedPaths: outcome.orphanedPaths } };
 }

@@ -124,6 +124,24 @@ export async function getAssessment(db: Db, assessmentId: string): Promise<Asses
 }
 
 /**
+ * Every assessment for one client, newest first.
+ *
+ * Without this the client page is a dead end: an assessment started and
+ * navigated away from is only reachable by remembering its URL.
+ */
+export async function listAssessments(db: Db, clientId: string): Promise<AssessmentRow[]> {
+  const { data, error } = await db
+    .from('assessments')
+    .select()
+    .eq('client_id', clientId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  if (error) fail('Could not load assessments', error.message);
+  return (data as AssessmentRow[] | null) ?? [];
+}
+
+/**
  * Save an intake draft (P1-03: autosave, resumable across devices).
  *
  * Zod-parses before writing. With JSONB storage there is no database-level
