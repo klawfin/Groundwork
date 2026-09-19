@@ -79,7 +79,7 @@ export const serverSchema = z.object({
    * rule (PRD 6.6).
    */
   OPENROUTER_API_KEY: z.string().min(1).optional(),
-  OPENROUTER_MODEL_ID: z.string().min(1).default('anthropic/claude-sonnet-4.5'),
+  OPENROUTER_MODEL_ID: z.string().min(1).default('anthropic/claude-sonnet-5'),
 
   /**
    * Rates for the PRE-FLIGHT cost gate only; the ledger records the exact cost
@@ -89,8 +89,8 @@ export const serverSchema = z.object({
    *
    * Check them against https://openrouter.ai/models for your chosen model.
    */
-  OPENROUTER_INPUT_USD_PER_MTOK: z.coerce.number().nonnegative().default(3),
-  OPENROUTER_OUTPUT_USD_PER_MTOK: z.coerce.number().nonnegative().default(15),
+  OPENROUTER_INPUT_USD_PER_MTOK: z.coerce.number().nonnegative().default(2),
+  OPENROUTER_OUTPUT_USD_PER_MTOK: z.coerce.number().nonnegative().default(10),
 
   /**
    * The authorisation boundary for the whole application in Phase 1,

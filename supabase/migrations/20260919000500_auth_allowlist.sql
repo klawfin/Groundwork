@@ -79,10 +79,24 @@ begin
 
   if not found then
     -- A non-allowlisted address receives a generic failure and NO account is
-    -- created (PRD P1-01). The attempt is audited below.
-    insert into audit_log (action, entity_type, actor_email, metadata)
-    values ('auth.denied', 'session', new.email,
-            jsonb_build_object('reason', 'not_on_allowlist'));
+    -- created (PRD P1-01).
+    --
+    -- NOTE ON AUDITING, learned by running it: an `insert into audit_log`
+    -- here CANNOT WORK. `raise exception` aborts the transaction and takes the
+    -- insert with it, so the row is written and immediately rolled back. An
+    -- earlier version of this trigger did exactly that and silently recorded
+    -- nothing.
+    --
+    -- Denials are audited by the APPLICATION instead, in
+    -- apps/web/src/app/auth/magic-link/route.ts, which checks the allowlist
+    -- before asking Supabase for a link and writes the audit row in its own
+    -- committed transaction.
+    --
+    -- This `raise log` is the backstop for the one path the application does
+    -- not see: a request made directly against the Supabase auth endpoint. It
+    -- lands in the Postgres log, not the audit table, and that difference is
+    -- why the application check is the primary record rather than a duplicate.
+    raise log 'auth.denied: % is not on the allowlist', new.email;
     raise exception 'Not authorised';
   end if;
 
