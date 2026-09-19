@@ -165,8 +165,29 @@ describe('retry policy', () => {
     expect(MAX_RETRIES).toBe(1);
   });
 
-  it('caps output tokens at the documented hard limit', () => {
-    expect(MAX_OUTPUT_TOKENS).toBe(8_000);
+  /**
+   * This used to assert `MAX_OUTPUT_TOKENS === 8000`, which pinned the number
+   * to itself and proved nothing - it only made the constant awkward to
+   * change while the real constraint went unchecked.
+   *
+   * The constraint that matters is the coupling: `preflight` multiplies this
+   * by the output rate, so a cap raised without raising REPORT_COST_CAP_INR
+   * makes the most expensive model silently fail the gate. The size of the
+   * response is covered separately in outputBudget.test.ts.
+   */
+  it('leaves every priced model inside the default cost cap', () => {
+    const promptTokens = 15_000; // a realistically large assembled prompt
+    for (const modelId of Object.keys(PRICING)) {
+      const gate = preflight(
+        promptTokens,
+        pricingFor(modelId),
+        0,
+        DEFAULT_COST_CAP_PAISE,
+        MAX_OUTPUT_TOKENS,
+        USD_INR_RATE,
+      );
+      expect(gate.withinCap, `${modelId} cannot run within the cost cap`).toBe(true);
+    }
   });
 });
 

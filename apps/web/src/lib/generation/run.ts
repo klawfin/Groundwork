@@ -48,6 +48,7 @@ import {
 import {
   assemblePrompt,
   generateNarrative,
+  MAX_OUTPUT_TOKENS,
   openRouterPricing,
   runGuardrails,
   stubNarrative,
@@ -463,7 +464,9 @@ async function liveNarrative(db: Db, input: LiveInput): Promise<Produced> {
       assessment_id: input.assessmentId,
       purpose: 'narrative',
       model_id: input.modelId,
-      max_tokens: 8_000,
+      // The constant, never a copy of it: a hardcoded duplicate here would
+      // record a ceiling the request did not actually use.
+      max_tokens: MAX_OUTPUT_TOKENS,
       prompt_version: prompt.promptVersion,
       system_prompt_sha256: sha256(prompt.system),
       prompt_sha256: sha256(prompt.user),

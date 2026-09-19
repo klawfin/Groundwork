@@ -47,6 +47,22 @@ export type GenerationOutcome =
  * `never`, which surfaces as "Property 'id' does not exist on type 'never'"
  * far from the actual cause.
  */
+/**
+ * Who MAY sign in, as distinct from who HAS.
+ *
+ * Carries no foreign key, so an address can be provisioned before the person
+ * has an auth identity. `app_users` is created from this by the signup trigger
+ * (decision 0015).
+ */
+export type AuthAllowlistRow = {
+  email: string;
+  full_name: string | null;
+  role: UserRole;
+  is_active: boolean;
+  invited_by: string | null;
+  invited_at: string;
+}
+
 export type AppUserRow = {
   id: string;
   email: string;
@@ -292,6 +308,7 @@ type Empty = { [_ in never]: never };
 export interface Database {
   public: {
     Tables: {
+      auth_allowlist: Table<AuthAllowlistRow>;
       app_users: Table<AppUserRow>;
       clients: Table<ClientRow>;
       assessments: Table<AssessmentRow>;

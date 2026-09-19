@@ -25,6 +25,7 @@ import { resolveActor, canWrite, canViewCosts, type Actor } from '../lib/auth/se
 import { serverClient } from '../lib/db/client';
 import { admin } from '../lib/db/admin';
 import { executeClientDeletion } from '../lib/db/deletion';
+import { runRetentionPurge, summarisePurge } from '../lib/db/retention';
 import { writeAudit, type AuditContext } from '../lib/audit/log';
 import {
   createAssessment,
@@ -750,4 +751,60 @@ export async function executeDeletionAction(
 
   revalidatePath('/clients');
   return { ok: true, data: { message: outcome.message, orphanedPaths: outcome.orphanedPaths } };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Retention (PRD 10.6, architecture 3.6)                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Run the retention purge.
+ *
+ * Owner only, and DRY BY DEFAULT. The caller has to ask for a real purge
+ * explicitly, because the difference between the two is whether a paying
+ * client's report still exists afterwards.
+ *
+ * Runs through the service-role client: the purge touches rows across every
+ * client and nulls fields RLS is there to protect, which is one of the few
+ * operations RLS genuinely cannot express.
+ */
+export async function runRetentionPurgeAction(
+  execute: unknown,
+): Promise<ActionResult<{ dryRun: boolean; summary: { action: string; count: number }[]; total: number; objectsRemoved: number; orphanedPaths: string[] }>> {
+  const auth = await authorise();
+  if (!auth.ok) return auth;
+
+  if (!canViewCosts(auth.actor)) {
+    return { ok: false, error: 'Only the account owner can run the retention purge.' };
+  }
+
+  const dryRun = execute !== true;
+  const result = await runRetentionPurge(admin(), dryRun);
+
+  if (result.error) return { ok: false, error: result.error };
+
+  if (!dryRun) {
+    await writeAudit(auth.db, {
+      ...auth.audit,
+      action: 'retention.purge_executed',
+      entityType: 'system',
+      metadata: {
+        entries: result.entries.length,
+        objects_removed: result.objectsRemoved,
+        orphaned: result.orphanedPaths.length,
+      },
+    });
+  }
+
+  revalidatePath('/admin/retention');
+  return {
+    ok: true,
+    data: {
+      dryRun,
+      summary: summarisePurge(result.entries),
+      total: result.entries.length,
+      objectsRemoved: result.objectsRemoved,
+      orphanedPaths: result.orphanedPaths,
+    },
+  };
 }

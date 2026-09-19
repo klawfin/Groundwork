@@ -125,8 +125,36 @@ export const DEFAULT_COST_CAP_PAISE = 4_000;
 /** Soft target above which a report is visibly flagged (PRD P1-10). */
 export const SOFT_TARGET_PAISE = 4_000;
 
-/** `max_tokens` hard cap. Not advisory (PRD 6.6). */
-export const MAX_OUTPUT_TOKENS = 8_000;
+/**
+ * `max_tokens` hard cap. Not advisory (PRD 6.6).
+ *
+ * MEASURED, not chosen. `tests/outputBudget.test.ts` builds the largest
+ * response the prompt actually asks for - prose at the top of its word bands,
+ * three gaps and three recommendations per dimension, the fixed 28-item data
+ * room checklist - and it serialises to roughly 10,500 estimated tokens.
+ *
+ * This was 8,000, which could not hold that document. A live generation hit the
+ * ceiling and truncated, and truncation is not a soft failure: the response is
+ * discarded, the money is already spent, and the operator gets the fallback
+ * report instead of the one they paid for.
+ *
+ * `max_tokens` is a CEILING, NOT A PURCHASE. Tokens are billed as generated, so
+ * raising it costs nothing unless the model uses the room. Leaving it too low
+ * guarantees the worst outcome: full cost, no usable output.
+ *
+ * COUPLED TO THE COST CAP, and this is the constraint that fixes the number.
+ * `preflight` multiplies this by the output rate to decide whether to spend at
+ * all. Against the Rs.40 cap the worst case is:
+ *
+ *     opus-5     14,000 -> 3,740 paise   (16,000 -> 4,180, over cap)
+ *     sonnet-5   14,000 -> 1,496 paise
+ *     haiku-4.5  14,000 ->   748 paise
+ *
+ * 14,000 is therefore the largest value that still lets the most expensive
+ * priced model run. Raising it further requires raising REPORT_COST_CAP_INR in
+ * the same change, or opus-5 silently stops passing pre-flight.
+ */
+export const MAX_OUTPUT_TOKENS = 14_000;
 
 /** Exactly one retry per generation. Never a loop (PRD 6.6, 8.2). */
 export const MAX_RETRIES = 1;

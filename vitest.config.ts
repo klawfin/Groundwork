@@ -55,6 +55,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['packages/*/tests/**/*.test.ts', 'apps/web/tests/**/*.test.{ts,tsx}'],
+    /**
+     * Integration tests need a running Supabase and are excluded here on
+     * purpose. `pnpm test` must stay runnable with no Docker, no network and
+     * no credentials - see vitest.integration.config.ts.
+     */
+    exclude: ['**/node_modules/**', '**/dist/**', 'apps/web/tests/integration/**'],
     coverage: {
       provider: 'v8',
       // readme.md: put the tests where correctness is load-bearing.

@@ -12,6 +12,8 @@
  * than a cancelled meeting.
  */
 
+import { randomUUID } from 'node:crypto';
+
 import { cookies, headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 
@@ -127,17 +129,46 @@ export async function POST(
     hasIncompleteWatermark: coverage.requiresWatermark,
   });
 
-  // Insert the row first so the storage key is derived from a real report id -
-  // UUIDs only, never a client name (architecture 5.3).
+  // The id is generated HERE, not by the database, and the order below is the
+  // whole reason why.
+  //
+  // This route used to insert the row with storage_path 'pending', upload, and
+  // then update the path. That can never work: `reports_protect_immutability`
+  // forbids changing storage_path after insert, so the update was rejected and
+  // - because its error was not checked - the route reported success while
+  // leaving a row permanently pointing at 'pending'. The PDF sat in the bucket
+  // and the download endpoint returned 502 forever. The first live run is what
+  // caught it.
+  //
+  // Generating the id up front means the final path is known before anything
+  // is written, so the row is correct the first time and never updated.
+  //
+  // UPLOAD BEFORE INSERT, also deliberate. If the upload fails there is no row,
+  // so nothing offers a download that cannot work. The opposite order trades
+  // that for a row promising a file that does not exist, which is the failure
+  // this route just had. A failed insert leaves an orphaned object instead,
+  // which is harmless and is cleaned up below.
+  const reportId = randomUUID();
+  const path = storagePath(assessment.client_id, assessmentId, reportId, version);
+
+  const { error: uploadError } = await admin()
+    .storage.from('reports')
+    .upload(path, rendered.bytes, { contentType: 'application/pdf', upsert: false });
+
+  if (uploadError) {
+    return NextResponse.json({ error: 'Could not store the report.' }, { status: 502 });
+  }
+
   const { data: row, error: insertError } = await db
     .from('reports')
     .insert({
+      id: reportId,
+      storage_path: path,
       assessment_id: assessmentId,
       // Null when the fallback was rendered: the column records which
       // narrative this PDF CONTAINS, not which one happened to exist.
       narrative_id: usableNarrative ? (narrative?.id ?? null) : null,
       version,
-      storage_path: 'pending',
       byte_size: rendered.byteSize,
       sha256: rendered.sha256,
       composite_score: score.composite,
@@ -152,20 +183,10 @@ export async function POST(
     .single();
 
   if (insertError || !row) {
+    // Do not leave the object behind: without a row nothing can ever reach it.
+    await admin().storage.from('reports').remove([path]).catch(() => undefined);
     return NextResponse.json({ error: 'Could not record the report.' }, { status: 500 });
   }
-
-  const path = storagePath(assessment.client_id, assessmentId, row.id, version);
-
-  const { error: uploadError } = await admin()
-    .storage.from('reports')
-    .upload(path, rendered.bytes, { contentType: 'application/pdf', upsert: false });
-
-  if (uploadError) {
-    return NextResponse.json({ error: 'Could not store the report.' }, { status: 502 });
-  }
-
-  await db.from('reports').update({ storage_path: path }).eq('id', row.id);
 
   await writeAudit(db, {
     ...auth.audit,

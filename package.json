@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "supabase db push",
-    "db:seed": "supabase db execute --file supabase/seed.sql"
+    "db:seed": "supabase db execute --file supabase/seed.sql",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "devDependencies": {
     "@types/node": "^22.18.1",
@@ -22,6 +23,8 @@
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "packageManager": "pnpm@10.13.1"
 }

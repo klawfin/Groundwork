@@ -72,7 +72,13 @@ export type EntityType =
   | 'assessment'
   | 'narrative'
   | 'report'
-  | 'generation';
+  | 'generation'
+  /**
+   * Not tied to one record. The retention purge is the only user of this: the
+   * SQL function writes a per-entity row for each thing it touches, and the
+   * application writes one summary row for the run itself.
+   */
+  | 'system';
 
 export interface AuditEntry {
   action: AuditAction;

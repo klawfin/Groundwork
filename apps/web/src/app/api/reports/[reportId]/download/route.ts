@@ -53,7 +53,7 @@ export async function GET(
   // authorisation boundary (architecture ADR-007).
   const { data: report } = await db
     .from('reports')
-    .select('id, assessment_id, storage_bucket, storage_path, version, purged_at, generated_at')
+    .select('id, assessment_id, storage_bucket, storage_path, version, purged_at, generated_at, download_count')
     .eq('id', reportId)
     .maybeSingle();
 
@@ -102,9 +102,15 @@ export async function GET(
     return NextResponse.json({ error: 'Could not prepare the download.' }, { status: 502 });
   }
 
+  // Incremented, not set. This assigned a literal 1, so the counter stopped at
+  // one however many times a report was downloaded - which quietly made it
+  // useless as the "was this actually delivered" signal it exists to be.
   await db
     .from('reports')
-    .update({ download_count: 1, last_downloaded_at: new Date().toISOString() })
+    .update({
+      download_count: report.download_count + 1,
+      last_downloaded_at: new Date().toISOString(),
+    })
     .eq('id', report.id);
 
   return NextResponse.redirect(signed.signedUrl);

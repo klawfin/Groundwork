@@ -41,3 +41,4 @@ plan and the readme, which disagree in places.
 | — | Repository layout: pnpm workspace | [0012](./0012-repo-layout.md) |
 | — | Product name: Groundwork by Klawfin | [0013](./0013-product-name.md) |
 | — | `DISABLE_LLM_GENERATION` produces an inert stub narrative, never a client PDF | [0014](./0014-offline-generation.md) |
+| — | What the first run against a real database found, and why the tests missed it | [0015](./0015-first-live-run.md) |

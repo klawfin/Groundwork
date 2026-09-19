@@ -31,9 +31,14 @@ export async function Nav() {
           Clients
         </a>
         {canViewCosts(auth.actor) && (
-          <a href="/admin/costs" className="text-stone-600 hover:text-stone-900">
-            Costs
-          </a>
+          <>
+            <a href="/admin/costs" className="text-stone-600 hover:text-stone-900">
+              Costs
+            </a>
+            <a href="/admin/retention" className="text-stone-600 hover:text-stone-900">
+              Retention
+            </a>
+          </>
         )}
         <span className="ml-auto text-xs text-stone-500">{auth.actor.email}</span>
       </div>

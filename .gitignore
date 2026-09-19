@@ -43,3 +43,13 @@ coverage/
 .vercel
 
 docs/*
+
+# ...but NOT the design record. decisions/ and TRACEABILITY.md are the only
+# surviving rationale for why this system is shaped the way it is - the PRD and
+# architecture documents were never committed. `docs/*` was silently swallowing
+# every NEW decision file while the existing ones stayed tracked, so the record
+# would have quietly stopped growing.
+!docs/decisions/
+!docs/decisions/**
+!docs/AI_CODING_RULES.md
+!docs/TRACEABILITY.md

@@ -61,13 +61,63 @@ docs/decisions/     One record per resolved OPEN- item
 
 ```bash
 pnpm install
-cp .env.example .env.local        # fill it in; it is gitignored — confirm that before adding a real key
-
-pnpm test                          # 193 tests, no external services needed
+pnpm test                          # 303 tests, no external services needed
 pnpm typecheck                     # whole workspace
 ```
 
-Requires Node 20+ and pnpm. A Supabase project is only needed once the web app exists — the entire engine is testable without one.
+Requires Node 20+ and pnpm. The scoring engine, guardrails and PDF renderer are
+all testable with no database and no API key.
+
+### Running the app
+
+Needs Docker Desktop running.
+
+```bash
+npx supabase start                 # applies every migration, seeds the allowlist
+cp .env.example apps/web/.env      # then fill it in
+pnpm --filter @klawfin/web dev
+pnpm test:integration              # 19 tests against the real database
+```
+
+**`apps/web/.env`, not the repository root.** Next.js loads environment files
+relative to its own project directory, so a `.env` at the monorepo root is
+silently ignored and the app starts with no configuration at all. It presents
+as `"database": "unreachable"` from `/api/health` with nothing else to go on.
+
+`npx supabase start` prints the local URL, anon key and service-role key. They
+are the same on every machine, are published in Supabase's own documentation,
+and reach nothing but the container on your laptop — but never reuse them for a
+hosted project.
+
+| | |
+|---|---|
+| Studio | http://127.0.0.1:54323 |
+| Mailpit — magic-link emails land here | http://127.0.0.1:54324 |
+| Health check | http://localhost:3000/api/health |
+
+To sign in, your address must be in **both** lists — the `auth_allowlist` table
+and `AUTH_ALLOWED_EMAILS`. That redundancy is deliberate (decision 0001):
+
+```bash
+docker exec supabase_db_klawfin psql -U postgres -d postgres -c   "insert into auth_allowlist (email, full_name, role)
+   values ('you@example.com', 'Your Name', 'owner');"
+```
+
+`supabase/seed.sql` provides `dev@groundwork.local` so a `db reset` never leaves
+you locked out. Never commit a real address to it.
+
+Two things to know when sign-in misbehaves:
+
+- Supabase **silently drops** a magic link whose redirect is not in its allow
+  list. Keep `additional_redirect_urls` in `supabase/config.toml` in step with
+  `APP_URL`. The route logs the reason to the server console; the browser
+  deliberately sees the same generic message either way.
+- Repeated sends to the same address are throttled. Use a second allowlisted
+  address while testing rather than chasing a phantom failure.
+
+Leave `DISABLE_LLM_GENERATION=true` for all UI work. The whole pipeline —
+generation, guardrails, review screen, export, audit trail — runs offline at no
+cost (decision 0014).
 
 ### Seed data
 
