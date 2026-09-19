@@ -53,10 +53,6 @@ export function getPublicEnv(): PublicEnv {
   return cachedPublicEnv;
 }
 
-/** Test seam only. Never called by application code. */
-export function __resetPublicEnvCache(): void {
-  cachedPublicEnv = null;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Server - secrets                                                           */

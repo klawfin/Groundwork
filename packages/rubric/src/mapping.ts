@@ -23,8 +23,8 @@
  * argued about after the first three real clients.
  */
 
-import type { AnchorScore, DimensionId, SubCriterion } from './types.js';
-import { ALL_SUB_CRITERIA } from './definitions.js';
+import type { AnchorScore, DimensionId, SubCriterion } from './types';
+import { ALL_SUB_CRITERIA } from './definitions';
 import type { Intake } from '@klawfin/core';
 import { isAnswered, numOrZero as n, presentCount } from '@klawfin/core';
 

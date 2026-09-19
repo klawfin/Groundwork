@@ -6,9 +6,9 @@
  * as fact (PRD NG9, readme.md structural rule 2).
  */
 
-export * from './types.js';
-export * from './definitions.js';
-export * from './bands.js';
-export * from './mapping.js';
-export * from './score.js';
-export * from './priority.js';
+export * from './types';
+export * from './definitions';
+export * from './bands';
+export * from './mapping';
+export * from './score';
+export * from './priority';

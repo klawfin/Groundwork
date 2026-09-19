@@ -18,7 +18,7 @@
  */
 
 import type { ScoreResult } from '@klawfin/rubric';
-import type { NarrativeResponse } from './schema.js';
+import type { NarrativeResponse } from './schema';
 
 export type GuardrailSeverity = 'block' | 'warn';
 

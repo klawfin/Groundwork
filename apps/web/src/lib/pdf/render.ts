@@ -18,7 +18,7 @@ import { renderToBuffer } from '@react-pdf/renderer';
 import { DATA_ROOM_ITEMS, type NarrativeResponse } from '@klawfin/llm';
 import { topPriorityGaps, type ScoreResult } from '@klawfin/rubric';
 
-import { ReportDocument, type ReportProps } from './ReportDocument.js';
+import { ReportDocument, type ReportProps } from './ReportDocument';
 
 export interface RenderInput {
   clientName: string;

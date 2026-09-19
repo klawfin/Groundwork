@@ -15,7 +15,7 @@
  * has text written for it, rather than a generic 0-4 scale applied by feel.
  */
 
-import type { Dimension, DimensionId, SubCriterion } from './types.js';
+import type { Dimension, DimensionId, SubCriterion } from './types';
 
 /**
  * Semantic version of this rubric. Stored on every report; reports are never

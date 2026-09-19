@@ -29,9 +29,9 @@ import {
   USD_INR_RATE,
   type CostBreakdown,
   type TokenUsage,
-} from './cost.js';
-import { narrativeResponseSchema, validateNarrativeResponse, type NarrativeResponse } from './schema.js';
-import { assemblePrompt, buildRepairMessage, type AssembledPrompt, type PromptFacts } from './prompt.js';
+} from './cost';
+import { narrativeResponseSchema, validateNarrativeResponse, type NarrativeResponse } from './schema';
+import { assemblePrompt, buildRepairMessage, type AssembledPrompt, type PromptFacts } from './prompt';
 
 /**
  * Default model.

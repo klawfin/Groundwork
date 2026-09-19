@@ -16,11 +16,11 @@ import type {
   DimensionResult,
   ScoreResult,
   SubCriterionResult,
-} from './types.js';
-import { ANCHOR_LABELS } from './types.js';
-import { DIMENSIONS, RUBRIC_VERSION } from './definitions.js';
-import { bandFor, confidenceFor, COVERAGE_GATES } from './bands.js';
-import { inputsFor, isAnswered, isPreRevenue, RULE_BY_ID } from './mapping.js';
+} from './types';
+import { ANCHOR_LABELS } from './types';
+import { DIMENSIONS, RUBRIC_VERSION } from './definitions';
+import { bandFor, confidenceFor, COVERAGE_GATES } from './bands';
+import { inputsFor, isAnswered, isPreRevenue, RULE_BY_ID } from './mapping';
 import type { Intake } from '@klawfin/core';
 
 /**

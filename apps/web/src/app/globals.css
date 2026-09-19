@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+
+/* One user, internal tool. No design system, no component library - the
+   client-facing artifact is the PDF, not this screen (decision 0003). */
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-stone-50 text-stone-900 antialiased;
+}

@@ -32,10 +32,9 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Workspace packages ship TypeScript source; Next compiles them (see 0012).
   transpilePackages: ['@klawfin/core', '@klawfin/rubric', '@klawfin/validation', '@klawfin/llm'],
-  experimental: {
-    // react-pdf must run in the Node runtime, never Edge.
-    serverComponentsExternalPackages: ['@react-pdf/renderer'],
-  },
+  // react-pdf must run in the Node runtime, never Edge. (Renamed out of
+  // `experimental` in Next 15.)
+  serverExternalPackages: ['@react-pdf/renderer'],
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

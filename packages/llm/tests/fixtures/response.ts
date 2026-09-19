@@ -10,7 +10,7 @@
  */
 
 import { DIMENSION_IDS, type ScoreResult } from '@klawfin/rubric';
-import { DATA_ROOM_ITEMS, type NarrativeResponse } from '../../src/schema.js';
+import { DATA_ROOM_ITEMS, type NarrativeResponse } from '../../src/schema';
 
 /** ~180 words, inside the executive_summary band. */
 function execSummary(composite: number, band: string): string {

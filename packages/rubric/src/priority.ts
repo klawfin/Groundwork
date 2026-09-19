@@ -15,8 +15,8 @@
  * Pure. No I/O.
  */
 
-import type { DimensionResult, Effort, ScoreResult } from './types.js';
-import { SUB_CRITERION_BY_ID } from './definitions.js';
+import type { DimensionResult, Effort, ScoreResult } from './types';
+import { SUB_CRITERION_BY_ID } from './definitions';
 
 /**
  * Effort weights used in the priority score.

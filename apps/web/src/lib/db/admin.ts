@@ -20,9 +20,9 @@
 import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { adminClient } from './client.js';
-import { parseServerEnv } from '../config/env.js';
-import type { Database } from './types.js';
+import { adminClient } from './client';
+import { parseServerEnv } from '../config/env';
+import type { Database } from './types';
 
 let cached: SupabaseClient<Database> | null = null;
 

@@ -23,10 +23,10 @@ import {
   checkNumericConsistency,
   checkProhibitedLanguage,
   runGuardrails,
-} from '../src/guardrails.js';
-import { validateNarrativeResponse, DATA_ROOM_ITEMS } from '../src/schema.js';
-import type { NarrativeResponse } from '../src/schema.js';
-import { validResponse, responseWith } from './fixtures/response.js';
+} from '../src/guardrails';
+import { validateNarrativeResponse, DATA_ROOM_ITEMS } from '../src/schema';
+import type { NarrativeResponse } from '../src/schema';
+import { validResponse, responseWith } from './fixtures/response';
 
 const score = scoreIntake(completeIntake);
 

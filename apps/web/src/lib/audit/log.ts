@@ -18,7 +18,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '../db/types.js';
+import type { Database } from '../db/types';
 
 /**
  * The audit vocabulary. Small and stable on purpose (architecture 3.4).
@@ -194,8 +194,3 @@ export function auditContextFromHeaders(
   };
 }
 
-/** Bind a context so call sites pass only what is specific to the event. */
-export function auditor(db: SupabaseClient<Database>, context: AuditContext) {
-  return (entry: Omit<AuditEntry, keyof AuditContext>) =>
-    writeAudit(db, { ...entry, ...context });
-}

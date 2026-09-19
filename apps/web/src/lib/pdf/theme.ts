@@ -17,8 +17,6 @@
 
 import { StyleSheet } from '@react-pdf/renderer';
 
-export const A4 = { width: 595.28, height: 841.89 } as const;
-
 export const color = {
   ink: '#111827',
   body: '#1f2937',
@@ -31,7 +29,7 @@ export const color = {
   alarm: '#b91c1c',
 } as const;
 
-export const space = { xs: 4, sm: 8, md: 14, lg: 22, xl: 34 } as const;
+export const space = { xs: 4, sm: 8, md: 14, lg: 22 } as const;
 
 export const type = {
   micro: 7.5,
@@ -148,15 +146,6 @@ export const styles = StyleSheet.create({
   listItem: { flexDirection: 'row', marginBottom: space.xs },
   bullet: { width: 14 },
   listBody: { flex: 1, lineHeight: 1.4 },
-
-  badge: {
-    fontSize: type.micro,
-    color: color.muted,
-    borderWidth: 1,
-    borderColor: color.hairline,
-    paddingVertical: 2,
-    paddingHorizontal: 5,
-  },
 
   /* Footer --------------------------------------------------------------- */
   footer: {

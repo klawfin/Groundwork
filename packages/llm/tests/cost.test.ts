@@ -23,7 +23,7 @@ import {
   paiseToRupees,
   preflight,
   pricingFor,
-} from '../src/cost.js';
+} from '../src/cost';
 
 describe('pricing table', () => {
   it('prices every model it lists with positive rates', () => {

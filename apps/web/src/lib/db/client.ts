@@ -3,7 +3,6 @@
  *
  * THREE clients, and the distinction is the security story (architecture 1.2):
  *
- *   browserClient()  anon key, RLS-bound. Safe in a Client Component.
  *   serverClient()   anon key + the user's session cookie. RLS applies AS THAT
  *                    USER. This is the default for anything reading client data.
  *   adminClient()    service-role key. BYPASSES RLS ENTIRELY. Server-only,
@@ -15,24 +14,11 @@
  * instead - see the footgun note in the RLS migration.
  */
 
-import { createBrowserClient, createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-import { getPublicEnv } from '../config/env.js';
-import type { Database } from './types.js';
-
-/* -------------------------------------------------------------------------- */
-/* Browser                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/** Anon key only. Its privileges are whatever RLS allows. */
-export function browserClient(): SupabaseClient<Database> {
-  const env = getPublicEnv();
-  return createBrowserClient<Database>(
-    env.NEXT_PUBLIC_SUPABASE_URL,
-    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  );
-}
+import { getPublicEnv } from '../config/env';
+import type { Database } from './types';
 
 /* -------------------------------------------------------------------------- */
 /* Server (RLS-bound, acting as the signed-in user)                           */

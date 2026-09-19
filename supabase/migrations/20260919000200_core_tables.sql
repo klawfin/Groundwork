@@ -232,7 +232,12 @@ create index assessment_narratives_assessment_idx
 create table reports (
   id                   uuid primary key default gen_random_uuid(),
   assessment_id        uuid not null references assessments(id) on delete cascade,
-  narrative_id         uuid not null references assessment_narratives(id),
+  -- NULLABLE on purpose: the fallback report (PRD 8.2) has no narrative. It
+  -- carries scores, the rubric, the data room checklist and the disclaimer,
+  -- with the narrative sections marked pending. Requiring a narrative here
+  -- would make the outage path unstorable, which is the one path that must
+  -- always work.
+  narrative_id         uuid references assessment_narratives(id),
   version              smallint not null default 1,
   tier                 report_tier not null default 'full',
 

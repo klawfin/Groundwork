@@ -22,7 +22,7 @@ export async function GET() {
 
   let database: 'ok' | 'unreachable' = 'unreachable';
   try {
-    const { getPublicEnv } = await import('@/lib/config/env.js');
+    const { getPublicEnv } = await import('@/lib/config/env');
     const env = getPublicEnv();
     const { createClient } = await import('@supabase/supabase-js');
     const probe = createClient(

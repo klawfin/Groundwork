@@ -6,7 +6,7 @@
  * diagnostic, not an endorsement and not a prediction of outcome (PRD 11.1).
  */
 
-import type { Band, Confidence } from './types.js';
+import type { Band, Confidence } from './types';
 
 export const BANDS: readonly Band[] = [
   {

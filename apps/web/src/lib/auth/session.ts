@@ -16,9 +16,9 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { isAllowedEmail, parseServerEnv } from '../config/env.js';
-import { auditContextFromHeaders, writeAudit, type AuditContext } from '../audit/log.js';
-import type { AppUserRow, Database } from '../db/types.js';
+import { isAllowedEmail, parseServerEnv } from '../config/env';
+import { auditContextFromHeaders, writeAudit, type AuditContext } from '../audit/log';
+import type { AppUserRow, Database } from '../db/types';
 
 export interface Actor {
   id: string;

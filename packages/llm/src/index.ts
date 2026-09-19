@@ -6,8 +6,9 @@
  * computed fact.
  */
 
-export * from './schema.js';
-export * from './guardrails.js';
-export * from './cost.js';
-export * from './prompt.js';
-export * from './client.js';
+export * from './schema';
+export * from './guardrails';
+export * from './cost';
+export * from './prompt';
+export * from './client';
+export * from './editMagnitude';

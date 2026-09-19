@@ -158,7 +158,8 @@ export type AssessmentNarrativeRow = {
 export type ReportRow = {
   id: string;
   assessment_id: string;
-  narrative_id: string;
+  /** null for a fallback report, which has no narrative (PRD 8.2). */
+  narrative_id: string | null;
   version: number;
   tier: ReportTier;
   storage_bucket: string;

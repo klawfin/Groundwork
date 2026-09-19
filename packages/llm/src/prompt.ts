@@ -22,7 +22,7 @@ import type { PriorityGap, ScoreResult } from '@klawfin/rubric';
 import { DIMENSIONS, formatPct, topPriorityGaps, remediationSchedule } from '@klawfin/rubric';
 import type { Contradiction } from '@klawfin/validation';
 import type { Intake } from '@klawfin/core';
-import { DATA_ROOM_ITEMS, PROMPT_VERSION } from './schema.js';
+import { DATA_ROOM_ITEMS, PROMPT_VERSION } from './schema';
 
 export { PROMPT_VERSION };
 
