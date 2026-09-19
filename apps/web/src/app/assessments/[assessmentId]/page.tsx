@@ -1,12 +1,15 @@
 import { cookies, headers } from 'next/headers';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { notFound, redirect } from 'next/navigation';
 
 import { emptyIntake } from '@klawfin/core';
 
 import { resolveActor } from '@/lib/auth/session';
 import { serverClient } from '@/lib/db/client';
+import type { Database } from '@/lib/db/types';
 import { getAssessment, getClient } from '@/lib/db/queries';
 import { IntakeForm } from './IntakeForm';
+import { NarrativePanel, type NarrativeSummary, type ReportSummary } from './NarrativePanel';
 
 /**
  * Intake and live score for one assessment.
@@ -31,6 +34,14 @@ export default async function AssessmentPage({
   const client = await getClient(db, assessment.client_id);
   if (!client) notFound();
 
+  const { data: dismissals } = await db
+    .from('contradiction_dismissals')
+    .select('code')
+    .eq('assessment_id', assessment.id);
+
+  const narrative = await latestNarrative(db, assessment.id);
+  const reports = await reportHistory(db, assessment.id);
+
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <header className="mb-6">
@@ -48,7 +59,78 @@ export default async function AssessmentPage({
         // Passed from the server so date-relative contradiction checks do not
         // depend on the browser's clock.
         asOf={new Date().toISOString()}
+        dismissedCodes={(dismissals ?? []).map((d) => d.code)}
+        coverageOverridden={assessment.coverage_override_reason !== null}
       />
+
+      <div className="mt-8">
+        <NarrativePanel
+          assessmentId={assessment.id}
+          intakeLocked={assessment.intake_locked_at !== null}
+          narrative={narrative}
+          reports={reports}
+        />
+      </div>
     </main>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Narrative and report history                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The latest narrative, shaped for the review panel.
+ *
+ * `current` is the edited text where one exists, because that is what the
+ * report would print and therefore what a reviewer must be looking at. The raw
+ * response stays in the database untouched so M4 keeps measuring the distance
+ * from what the model actually produced.
+ */
+async function latestNarrative(
+  db: SupabaseClient<Database>,
+  assessmentId: string,
+): Promise<NarrativeSummary | null> {
+  const { data } = await db
+    .from('assessment_narratives')
+    .select(
+      'id, version, model_id, raw_response, edited_response, edit_magnitude, guardrail_findings, guardrail_passed, is_fallback, approved_at',
+    )
+    .eq('assessment_id', assessmentId)
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    version: data.version,
+    modelId: data.model_id,
+    guardrailPassed: data.guardrail_passed,
+    guardrailFindings: data.guardrail_findings,
+    isFallback: data.is_fallback,
+    approvedAt: data.approved_at,
+    editMagnitudeOverall: data.edit_magnitude.overall ?? 0,
+    current: data.edited_response ?? data.raw_response,
+  };
+}
+
+async function reportHistory(
+  db: SupabaseClient<Database>,
+  assessmentId: string,
+): Promise<ReportSummary[]> {
+  const { data } = await db
+    .from('reports')
+    .select('id, version, generated_at, is_preliminary')
+    .eq('assessment_id', assessmentId)
+    .is('purged_at', null)
+    .order('version', { ascending: false });
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    version: row.version,
+    generatedAt: row.generated_at,
+    isPreliminary: row.is_preliminary,
+  }));
 }

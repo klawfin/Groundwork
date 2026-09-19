@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { PRODUCT_FULL_NAME } from '@klawfin/core';
 import './globals.css';
+import { Nav } from './Nav';
 
 export const metadata: Metadata = {
   title: PRODUCT_FULL_NAME,
@@ -11,7 +12,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen">
+        <Nav />
+        {children}
+      </body>
     </html>
   );
 }

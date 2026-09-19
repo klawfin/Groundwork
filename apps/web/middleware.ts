@@ -17,7 +17,7 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 /** Routes reachable without a session. Everything else is guarded. */
-const PUBLIC_PATHS = ['/login', '/auth/callback', '/api/health'];
+const PUBLIC_PATHS = ['/login', '/auth/callback', '/auth/magic-link', '/api/health'];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));

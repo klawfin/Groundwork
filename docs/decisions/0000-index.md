@@ -40,3 +40,4 @@ plan and the readme, which disagree in places.
 | — | Cap-table holders stored as refs, never names | [0011](./0011-cap-table-pii.md) |
 | — | Repository layout: pnpm workspace | [0012](./0012-repo-layout.md) |
 | — | Product name: Groundwork by Klawfin | [0013](./0013-product-name.md) |
+| — | `DISABLE_LLM_GENERATION` produces an inert stub narrative, never a client PDF | [0014](./0014-offline-generation.md) |

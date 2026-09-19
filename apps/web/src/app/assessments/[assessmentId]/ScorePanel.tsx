@@ -19,7 +19,21 @@ import { ANCHOR_LABELS, formatPct, scoreIntake, topPriorityGaps } from '@klawfin
 import { assessCoverage } from '@klawfin/validation';
 import { checkContradictions } from '@klawfin/validation';
 
-export function ScorePanel({ intake, asOf }: { intake: Intake; asOf: string }) {
+import { dismissContradictionAction, overrideCoverageAction } from '../../actions';
+
+export function ScorePanel({
+  assessmentId,
+  intake,
+  asOf,
+  dismissedCodes,
+  coverageOverridden,
+}: {
+  assessmentId: string;
+  intake: Intake;
+  asOf: string;
+  dismissedCodes: readonly string[];
+  coverageOverridden: boolean;
+}) {
   const [openDimension, setOpenDimension] = useState<string | null>(null);
 
   // `asOf` is passed from the server rather than read from the clock here, so
@@ -75,6 +89,21 @@ export function ScorePanel({ intake, asOf }: { intake: Intake; asOf: string }) {
       >
         <p className="font-medium">{coverage.disposition === 'normal' ? 'Ready' : 'Check first'}</p>
         <p className="mt-1">{coverage.summary}</p>
+
+        {coverageOverridden && (
+          <p className="mt-2 rounded bg-stone-100 p-2 text-stone-700">
+            Coverage was overridden with a recorded reason. The report will still be marked
+            preliminary - an override permits the work, it does not change what is known.
+          </p>
+        )}
+
+        {!coverage.canGenerate && !coverageOverridden && (
+          <ReasonForm
+            label="Generate anyway"
+            placeholder="Why is a report worth producing on this much information?"
+            submit={(reason) => overrideCoverageAction(assessmentId, reason)}
+          />
+        )}
       </section>
 
       {contradictions.contradictions.length > 0 && (
@@ -87,10 +116,27 @@ export function ScorePanel({ intake, asOf }: { intake: Intake; asOf: string }) {
               <li
                 key={c.code}
                 className={`rounded p-2 text-xs ${
-                  c.class === 'blocking' ? 'bg-red-50 text-red-900' : 'bg-amber-50 text-amber-900'
+                  dismissedCodes.includes(c.code)
+                    ? 'bg-stone-100 text-stone-600'
+                    : c.class === 'blocking'
+                      ? 'bg-red-50 text-red-900'
+                      : 'bg-amber-50 text-amber-900'
                 }`}
               >
-                <span className="font-medium uppercase">{c.class}</span> — {c.message}
+                <span className="font-medium uppercase">
+                  {dismissedCodes.includes(c.code) ? 'dismissed' : c.class}
+                </span>{' '}
+                — {c.message}
+
+                {/* Only blocking checks stop generation, so only they need a
+                    way past. A warning is already advisory. */}
+                {c.class === 'blocking' && !dismissedCodes.includes(c.code) && (
+                  <ReasonForm
+                    label="Dismiss"
+                    placeholder="Why is this acceptable?"
+                    submit={(reason) => dismissContradictionAction(assessmentId, c.code, reason)}
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -185,5 +231,83 @@ export function ScorePanel({ intake, asOf }: { intake: Intake; asOf: string }) {
         </section>
       )}
     </aside>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Override forms                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A gate with a written reason attached.
+ *
+ * Used for both overrides. The reason is mandatory server-side; this only
+ * keeps the button disabled until something has been typed, so the refusal is
+ * not the first feedback anybody gets.
+ */
+function ReasonForm({
+  label,
+  placeholder,
+  submit,
+}: {
+  label: string;
+  placeholder: string;
+  submit: (reason: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-2 rounded border border-current px-2 py-1 text-xs font-medium"
+      >
+        {label}
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 space-y-1">
+      <textarea
+        rows={2}
+        value={reason}
+        placeholder={placeholder}
+        onChange={(event) => setReason(event.target.value)}
+        className="w-full rounded border border-stone-300 p-1.5 text-xs text-stone-900"
+      />
+      {error && <p className="text-xs font-medium">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={pending || reason.trim().length < 10}
+          onClick={async () => {
+            setPending(true);
+            setError(null);
+            const result = await submit(reason);
+            if (result.ok) {
+              setOpen(false);
+            } else {
+              setError(result.error);
+            }
+            setPending(false);
+          }}
+          className="rounded bg-stone-900 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+        >
+          {pending ? 'Saving...' : 'Confirm'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded border border-current px-2 py-1 text-xs"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }

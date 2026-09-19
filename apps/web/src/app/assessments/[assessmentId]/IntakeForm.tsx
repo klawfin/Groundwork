@@ -44,10 +44,15 @@ export function IntakeForm({
   assessmentId,
   initialIntake,
   asOf,
+  dismissedCodes,
+  coverageOverridden,
 }: {
   assessmentId: string;
   initialIntake: Intake;
   asOf: string;
+  /** Contradictions already dismissed with a reason (P1-05). */
+  dismissedCodes: readonly string[];
+  coverageOverridden: boolean;
 }) {
   const [intake, setIntake] = useState<Intake>(initialIntake);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -136,7 +141,13 @@ export function IntakeForm({
       </div>
 
       <div className="lg:sticky lg:top-6 lg:self-start">
-        <ScorePanel intake={intake} asOf={asOf} />
+        <ScorePanel
+          assessmentId={assessmentId}
+          intake={intake}
+          asOf={asOf}
+          dismissedCodes={dismissedCodes}
+          coverageOverridden={coverageOverridden}
+        />
       </div>
     </div>
   );

@@ -69,19 +69,27 @@ export async function POST(
     return NextResponse.json({ error: 'Client not found.' }, { status: 404 });
   }
 
-  // Latest approved narrative, if any. Absent -> fallback report.
+  // Latest narrative, if any. Absent -> fallback report.
   const { data: narrative } = await db
     .from('assessment_narratives')
-    .select('id, raw_response, edited_response, prompt_version, guardrail_passed')
+    .select('id, raw_response, edited_response, prompt_version, guardrail_passed, is_fallback')
     .eq('assessment_id', assessmentId)
     .order('version', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  // A narrative that failed its guardrails must never reach a client PDF
-  // (PRD 6.5). Better a fallback report than a blocked one published anyway.
+  // Two independent reasons a narrative must not reach a client PDF:
+  //
+  //   guardrail_passed false - it failed a check (PRD 6.5). Better a fallback
+  //   report than a blocked one published anyway.
+  //
+  //   is_fallback true - it is the offline stub, assembled from the scores by
+  //   code with no model involved. It exists so the pipeline can be exercised
+  //   without spending; it is not writing, and it must not be presented as
+  //   though it were. This is what makes DISABLE_LLM_GENERATION safe to leave
+  //   on during development.
   const usableNarrative =
-    narrative && narrative.guardrail_passed
+    narrative && narrative.guardrail_passed && !narrative.is_fallback
       ? (narrative.edited_response ?? narrative.raw_response)
       : null;
 
@@ -125,14 +133,16 @@ export async function POST(
     .from('reports')
     .insert({
       assessment_id: assessmentId,
-      narrative_id: narrative?.id ?? null,
+      // Null when the fallback was rendered: the column records which
+      // narrative this PDF CONTAINS, not which one happened to exist.
+      narrative_id: usableNarrative ? (narrative?.id ?? null) : null,
       version,
       storage_path: 'pending',
       byte_size: rendered.byteSize,
       sha256: rendered.sha256,
       composite_score: score.composite,
       rubric_version: assessment.rubric_version,
-      prompt_version: narrative?.prompt_version ?? 'none',
+      prompt_version: usableNarrative ? (narrative?.prompt_version ?? 'none') : 'none',
       generator_version: process.env.VERCEL_GIT_COMMIT_SHA ?? 'local',
       is_preliminary: coverage.markPreliminary,
       has_incomplete_watermark: coverage.requiresWatermark,

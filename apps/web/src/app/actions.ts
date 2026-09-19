@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { parseIntake } from '@klawfin/core';
 import { scoreIntake } from '@klawfin/rubric';
 import { checkContradictions } from '@klawfin/validation';
+import { editMagnitude, runGuardrails, type NarrativeResponse } from '@klawfin/llm';
 
 import { resolveActor, canWrite, type Actor } from '../lib/auth/session';
 import { serverClient } from '../lib/db/client';
@@ -254,4 +255,335 @@ export async function lockIntakeAction(
 
   revalidatePath(`/assessments/${id.data}`);
   return { ok: true, data: { composite: score.composite, band: score.band.label } };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Narrative review (PRD P1-07)                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The sections a human may edit.
+ *
+ * Deliberately NOT the whole response. Scores, priority ranking and the
+ * disclaimer are not editable, so allowing an edit anywhere would let the
+ * prose drift from the computed result the report also prints - the one
+ * failure a reader notices immediately and cannot unsee.
+ *
+ * The shape mirrors the editable slice of `NarrativeResponse`; everything else
+ * is carried through from the raw response unchanged.
+ */
+const narrativeEditSchema = z.object({
+  executiveSummary: z.string().trim().min(1, 'The executive summary cannot be empty').max(3000),
+  overallAssessment: z.string().trim().min(1, 'The overall assessment cannot be empty').max(4000),
+  dimensions: z
+    .array(
+      z.object({
+        dimensionId: z.string().trim().min(1),
+        whatWeObserved: z.string().trim().min(1, 'This section cannot be empty').max(1500),
+        confidenceNote: z.string().trim().max(600).nullable(),
+      }),
+    )
+    .length(6),
+});
+
+export async function saveNarrativeEditAction(
+  narrativeId: unknown,
+  edit: unknown,
+): Promise<
+  ActionResult<{ editMagnitude: number; guardrailPassed: boolean; blockingFindings: number }>
+> {
+  const auth = await authorise();
+  if (!auth.ok) return auth;
+
+  const id = z.string().uuid().safeParse(narrativeId);
+  if (!id.success) return { ok: false, error: 'Unknown narrative.' };
+
+  const parsed = narrativeEditSchema.safeParse(edit);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'The edit could not be read.' };
+  }
+
+  const { data: row } = await auth.db
+    .from('assessment_narratives')
+    .select('id, assessment_id, raw_response, edited_response, is_fallback')
+    .eq('id', id.data)
+    .maybeSingle();
+
+  if (!row) return { ok: false, error: 'Narrative not found.' };
+
+  const { data: assessment } = await auth.db
+    .from('assessments')
+    .select('id, client_id, intake_data')
+    .eq('id', row.assessment_id)
+    .maybeSingle();
+
+  if (!assessment) return { ok: false, error: 'Assessment not found.' };
+
+  // Edits apply to the CURRENT text, which is the previous edit if there is
+  // one. The diff is always taken against `raw_response`, never against the
+  // intermediate, or M4 would measure the last keystroke instead of the total
+  // distance from what the model produced.
+  const base = row.edited_response ?? row.raw_response;
+  const edited: NarrativeResponse = {
+    ...base,
+    executive_summary: parsed.data.executiveSummary,
+    overall_assessment: parsed.data.overallAssessment,
+    dimensions: base.dimensions.map((dimension) => {
+      const change = parsed.data.dimensions.find((d) => d.dimensionId === dimension.dimension_id);
+      if (!change) return dimension;
+      return {
+        ...dimension,
+        what_we_observed: change.whatWeObserved,
+        confidence_note: change.confidenceNote,
+      };
+    }),
+  };
+
+  // Re-run the guardrails on the EDITED text. A human edit is exactly as
+  // capable of introducing a prohibited phrase or a wrong number as a
+  // generation is, and an edit that silently kept a stale pass would defeat
+  // the check entirely (PRD 6.5).
+  const score = scoreIntake(assessment.intake_data);
+  const guardrails = runGuardrails(edited, score);
+  const magnitude = editMagnitude(row.raw_response, edited);
+
+  const { error } = await auth.db
+    .from('assessment_narratives')
+    .update({
+      edited_response: edited,
+      edit_magnitude: { ...magnitude.bySection, overall: magnitude.overall },
+      guardrail_findings: [...guardrails.findings],
+      guardrail_passed: guardrails.passed,
+      // An edit invalidates a prior approval: what was approved is no longer
+      // what would be printed.
+      approved_by: null,
+      approved_at: null,
+    })
+    .eq('id', id.data);
+
+  if (error) return { ok: false, error: 'The edit could not be saved.' };
+
+  await writeAudit(auth.db, {
+    ...auth.audit,
+    action: 'narrative.edited',
+    entityType: 'narrative',
+    entityId: id.data,
+    clientId: assessment.client_id,
+    // Magnitudes and counts only. The edited TEXT is about a client and does
+    // not belong in the audit table.
+    metadata: {
+      edit_magnitude_overall: Number(magnitude.overall.toFixed(4)),
+      sections_touched: Object.values(magnitude.bySection).filter((v) => v > 0).length,
+      guardrail_passed: guardrails.passed,
+      blocking: guardrails.blocking.length,
+    },
+  });
+
+  revalidatePath(`/assessments/${row.assessment_id}`);
+  return {
+    ok: true,
+    data: {
+      editMagnitude: magnitude.overall,
+      guardrailPassed: guardrails.passed,
+      blockingFindings: guardrails.blocking.length,
+    },
+  };
+}
+
+export async function approveNarrativeAction(
+  narrativeId: unknown,
+): Promise<ActionResult<{ approvedAt: string }>> {
+  const auth = await authorise();
+  if (!auth.ok) return auth;
+
+  const id = z.string().uuid().safeParse(narrativeId);
+  if (!id.success) return { ok: false, error: 'Unknown narrative.' };
+
+  const { data: row } = await auth.db
+    .from('assessment_narratives')
+    .select('id, assessment_id, guardrail_passed, is_fallback')
+    .eq('id', id.data)
+    .maybeSingle();
+
+  if (!row) return { ok: false, error: 'Narrative not found.' };
+
+  // Two refusals, both deliberate. Approval is the step that makes a narrative
+  // printable, so it is the right place to stop both of these rather than
+  // relying on the export route to catch them later.
+  if (!row.guardrail_passed) {
+    return {
+      ok: false,
+      error:
+        'This narrative has unresolved blocking guardrail findings. Edit the flagged sections, or regenerate.',
+    };
+  }
+  if (row.is_fallback) {
+    return {
+      ok: false,
+      error:
+        'This is an offline narrative assembled from the scores, not generated writing. It cannot be approved for a client report. Generate with the model, or export the fallback report, which carries the scores without a narrative.',
+    };
+  }
+
+  const approvedAt = new Date().toISOString();
+  const { error } = await auth.db
+    .from('assessment_narratives')
+    .update({ approved_by: auth.actor.id, approved_at: approvedAt })
+    .eq('id', id.data);
+
+  if (error) return { ok: false, error: 'The approval could not be recorded.' };
+
+  await writeAudit(auth.db, {
+    ...auth.audit,
+    action: 'narrative.approved',
+    entityType: 'narrative',
+    entityId: id.data,
+    metadata: { assessment_id: row.assessment_id },
+  });
+
+  revalidatePath(`/assessments/${row.assessment_id}`);
+  return { ok: true, data: { approvedAt } };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Overrides (PRD P1-05, 8.1)                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Both overrides below demand a written reason, and neither accepts a blank
+ * one.
+ *
+ * A gate that can be clicked past without saying why is a gate that gets
+ * clicked past. The reason is stored, audited and attributable, which is the
+ * whole mechanism: the cost of overriding is having to write down that you
+ * did, and why.
+ */
+const MIN_REASON = 10;
+
+export async function dismissContradictionAction(
+  assessmentId: unknown,
+  code: unknown,
+  reason: unknown,
+): Promise<ActionResult<{ code: string }>> {
+  const auth = await authorise();
+  if (!auth.ok) return auth;
+
+  const parsed = z
+    .object({
+      assessmentId: z.string().uuid(),
+      code: z.string().trim().min(1).max(80),
+      reason: z
+        .string()
+        .trim()
+        .min(MIN_REASON, 'Say why this contradiction is acceptable - at least a sentence.')
+        .max(1000),
+    })
+    .safeParse({ assessmentId, code, reason });
+
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'The dismissal could not be read.' };
+  }
+
+  const { data: assessment } = await auth.db
+    .from('assessments')
+    .select('id, client_id, intake_data, intake_locked_at')
+    .eq('id', parsed.data.assessmentId)
+    .maybeSingle();
+
+  if (!assessment) return { ok: false, error: 'Assessment not found.' };
+
+  // Only a contradiction that actually fired may be dismissed. Without this,
+  // a stale or mistyped code would sit in the table looking like a decision
+  // somebody made.
+  const report = checkContradictions(
+    assessment.intake_data,
+    new Date(assessment.intake_locked_at ?? Date.now()),
+  );
+  const target = report.contradictions.find((c) => c.code === parsed.data.code);
+  if (!target) {
+    return { ok: false, error: 'That contradiction is not currently firing on this intake.' };
+  }
+
+  const { error } = await auth.db.from('contradiction_dismissals').insert({
+    assessment_id: parsed.data.assessmentId,
+    code: parsed.data.code,
+    reason: parsed.data.reason,
+    dismissed_by: auth.actor.id,
+  });
+
+  if (error) return { ok: false, error: 'The dismissal could not be saved.' };
+
+  await writeAudit(auth.db, {
+    ...auth.audit,
+    action: 'contradiction.dismissed',
+    entityType: 'assessment',
+    entityId: parsed.data.assessmentId,
+    clientId: assessment.client_id,
+    // The code and the class, not the message: the message quotes intake
+    // values back, and those do not belong in the audit table.
+    metadata: { code: parsed.data.code, class: target.class },
+  });
+
+  revalidatePath(`/assessments/${parsed.data.assessmentId}`);
+  return { ok: true, data: { code: parsed.data.code } };
+}
+
+export async function overrideCoverageAction(
+  assessmentId: unknown,
+  reason: unknown,
+): Promise<ActionResult<{ overriddenAt: string }>> {
+  const auth = await authorise();
+  if (!auth.ok) return auth;
+
+  const parsed = z
+    .object({
+      assessmentId: z.string().uuid(),
+      reason: z
+        .string()
+        .trim()
+        .min(MIN_REASON, 'Say why a report is worth producing on this much information.')
+        .max(1000),
+    })
+    .safeParse({ assessmentId, reason });
+
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'The override could not be read.' };
+  }
+
+  const { data: assessment } = await auth.db
+    .from('assessments')
+    .select('id, client_id, intake_data')
+    .eq('id', parsed.data.assessmentId)
+    .maybeSingle();
+
+  if (!assessment) return { ok: false, error: 'Assessment not found.' };
+
+  const score = scoreIntake(assessment.intake_data);
+  const overriddenAt = new Date().toISOString();
+
+  const { error } = await auth.db
+    .from('assessments')
+    .update({
+      coverage_override_reason: parsed.data.reason,
+      coverage_overridden_by: auth.actor.id,
+      coverage_overridden_at: overriddenAt,
+    })
+    .eq('id', parsed.data.assessmentId);
+
+  if (error) return { ok: false, error: 'The override could not be saved.' };
+
+  await writeAudit(auth.db, {
+    ...auth.audit,
+    action: 'coverage.overridden',
+    entityType: 'assessment',
+    entityId: parsed.data.assessmentId,
+    clientId: assessment.client_id,
+    metadata: {
+      coverage_pct: Math.round(score.overallCoverage * 100),
+      composite: score.composite,
+    },
+  });
+
+  revalidatePath(`/assessments/${parsed.data.assessmentId}`);
+  return { ok: true, data: { overriddenAt } };
 }

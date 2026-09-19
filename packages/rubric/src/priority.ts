@@ -15,7 +15,7 @@
  * Pure. No I/O.
  */
 
-import type { DimensionResult, Effort, ScoreResult } from './types';
+import type { DimensionId, DimensionResult, Effort, ScoreResult } from './types';
 import { SUB_CRITERION_BY_ID } from './definitions';
 
 /**
@@ -38,7 +38,7 @@ export const PRIORITY_GAP_COUNT = 5;
 export interface PriorityGap {
   rank: number;
   subCriterionId: string;
-  dimensionId: string;
+  dimensionId: DimensionId;
   dimensionName: string;
   label: string;
   /** Current 0-4 score. */

@@ -15,7 +15,24 @@
  *     monitor.
  */
 
-import { StyleSheet } from '@react-pdf/renderer';
+import { Font, StyleSheet } from '@react-pdf/renderer';
+
+/**
+ * Turn OFF automatic hyphenation.
+ *
+ * react-pdf hyphenates any word that does not fit the line, using a generic
+ * algorithm with no dictionary. On the cover it produced
+ *
+ *     Fundraise Readiness Assess-
+ *     ment
+ *
+ * which is the kind of small wrongness a client notices on the first page and
+ * cannot unsee. Without it, a long word wraps whole to the next line instead.
+ *
+ * The callback must return an array of word fragments; returning the word
+ * unsplit is how react-pdf is told not to break it.
+ */
+Font.registerHyphenationCallback((word) => [word]);
 
 export const color = {
   ink: '#111827',
