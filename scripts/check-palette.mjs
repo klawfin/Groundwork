@@ -81,6 +81,7 @@ if (process.argv.includes('--built')) {
 
   for (const sheet of sheets) {
     const css = readFileSync(join(cssDir, sheet), 'utf8');
+
     const hexes = new Set((css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).map((h) => h.toLowerCase()));
     for (const hex of hexes) {
       const bare = hex.slice(1);
@@ -89,6 +90,44 @@ if (process.argv.includes('--built')) {
       if (PALETTE.some((p) => bare.startsWith(p))) continue;
       failed = true;
       console.error(`${cssDir}/${sheet}  emits '${hex}', which is not in the brand kit`);
+    }
+
+    /*
+     * A HEX IS NOT THE ONLY WAY TO WRITE A COLOUR, and for a while this check
+     * behaved as though it were.
+     *
+     * Every colour in this project is authored as a hex, so scanning for
+     * `#rrggbb` caught everything - right up until the moment something
+     * arrived that writes colours differently. Tailwind v4 and shadcn/ui both
+     * emit `oklch(...)`, and shadcn ships a RED `--destructive` in exactly
+     * that form. Dropping it into this stylesheet would have added an eighth
+     * colour, a red the brand kit does not contain, and this check would have
+     * printed "Palette clean".
+     *
+     * So: any colour FUNCTION producing a literal value now fails. The brand
+     * colours are composed with `color-mix()` over the hex tokens, which is
+     * left alone - it cannot introduce a hue that was not already there.
+     */
+    const COLOUR_FN = /\b(oklch|oklab|lab|lch|hwb|hsla?|rgba?)\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g;
+
+    /**
+     * Not colours. Tailwind v4 probes browser capability with
+     * `@supports (color: rgb(from red r g b))` - a feature test that renders
+     * nothing. Anything else has to be justified by a person, which is the
+     * point: a new colour form should cost a conversation, not pass silently.
+     */
+    const BENIGN = [/^from\s+red\s+r\s+g\s+b$/];
+
+    const seen = new Set();
+    for (const [full, , args] of css.matchAll(COLOUR_FN)) {
+      const inner = args.trim();
+      if (BENIGN.some((pattern) => pattern.test(inner))) continue;
+      if (seen.has(full)) continue;
+      seen.add(full);
+      failed = true;
+      console.error(
+        `${cssDir}/${sheet}  emits '${full}'. Colours are authored as brand hexes; a colour function is how a hue outside the kit gets in.`,
+      );
     }
   }
 }

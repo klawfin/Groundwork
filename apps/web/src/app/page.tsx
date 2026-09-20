@@ -40,7 +40,9 @@ import { canViewCosts, resolveActor } from '@/lib/auth/session';
 import { serverClient } from '@/lib/db/client';
 import { listPipeline, type PipelineRow } from '@/lib/db/queries';
 import { coveragePct, statusMeaning } from '@/lib/status';
-import { Card, Chip, PageHeader, Stat } from './ui';
+import { StaggerItem, StaggerList } from './motion';
+import { StatusChip } from './StatusChip';
+import { Card, PageHeader, Stat } from './ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -251,30 +253,32 @@ function Queue({
       </div>
       <p className="mt-1 text-xs leading-relaxed text-ink/60">{note}</p>
 
-      <ul className="mt-2.5 divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+      <StaggerList className="mt-2.5 divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
         {rows.map((row) => (
-          <li key={row.assessmentId}>
-            <Link
-              href={`/assessments/${row.assessmentId}`}
-              className="group flex items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-ground"
-            >
+          <StaggerItem key={row.assessmentId}>
+            {/* Overlay link rather than a wrapping one - the chip carries a
+                tooltip, and a button inside an anchor is invalid nesting. */}
+            <div className="group relative flex items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-ground">
               <div className="min-w-0">
-                <p className="truncate font-serif text-[15px] font-semibold text-ink-strong">
-                  {row.clientName}
-                </p>
+                <Link
+                  href={`/assessments/${row.assessmentId}`}
+                  className="font-serif text-[15px] font-semibold text-ink-strong after:absolute after:inset-0 after:content-['']"
+                >
+                  <span className="block truncate">{row.clientName}</span>
+                </Link>
                 <p className="mt-0.5 truncate text-xs text-ink/60">
                   {statusMeaning(row.status).nextAction ?? statusMeaning(row.status).label}
                   {row.coverage !== null && ` · ${coveragePct(row.coverage)}% coverage`}
                   {` · ${relativeDays(row.updatedAt)}`}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-2.5">
+              <div className="relative z-10 flex shrink-0 items-center gap-2.5">
                 {row.composite !== null && (
                   <span className="tabular text-sm font-semibold text-ink-strong">
                     {row.composite}
                   </span>
                 )}
-                <Chip tone={statusMeaning(row.status).tone}>{statusMeaning(row.status).label}</Chip>
+                <StatusChip status={row.status} />
                 <span
                   aria-hidden
                   className="text-ink/35 transition-transform group-hover:translate-x-0.5 group-hover:text-ink"
@@ -282,10 +286,10 @@ function Queue({
                   &rarr;
                 </span>
               </div>
-            </Link>
-          </li>
+            </div>
+          </StaggerItem>
         ))}
-      </ul>
+      </StaggerList>
     </section>
   );
 }

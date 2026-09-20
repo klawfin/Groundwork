@@ -90,6 +90,24 @@ const TONE_FILL: Record<Tone, string> = {
   neutral: 'bg-ground text-ink border border-line',
 };
 
+/**
+ * Just the background class for a tone.
+ *
+ * Exported so the animated meter in `motion.tsx` paints itself from the same
+ * map rather than restating the five classes. Two copies of a colour mapping
+ * is how a component ends up a shade off from the one beside it, and the
+ * palette check would not catch it - both would be brand colours, just the
+ * wrong one.
+ */
+export function toneFill(tone: Tone): string {
+  // `noUncheckedIndexedAccess` is on, so the split result is possibly
+  // undefined. The fallback is a real brand class rather than an empty string:
+  // an unstyled bar would look like a bar at zero, which is a wrong number
+  // rather than a missing one.
+  const [fill] = TONE_FILL[tone].split(' ');
+  return fill ?? 'bg-ink';
+}
+
 export function Chip({
   tone = 'neutral',
   children,

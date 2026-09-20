@@ -13,13 +13,17 @@
     "@klawfin/llm": "workspace:*",
     "@klawfin/rubric": "workspace:*",
     "@klawfin/validation": "workspace:*",
+    "@radix-ui/react-tooltip": "^1.2.16",
     "@react-pdf/renderer": "^4.3.1",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.58.0",
+    "clsx": "^2.1.1",
+    "motion": "^13.4.0",
     "next": "^15.5.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "server-only": "^0.0.1",
+    "tailwind-merge": "^3.7.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
