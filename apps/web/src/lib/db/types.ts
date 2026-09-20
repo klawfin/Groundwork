@@ -354,6 +354,17 @@ export interface Database {
         Args: { dry_run?: boolean };
         Returns: { entity_type: string; entity_id: string; action: string }[];
       };
+      /**
+       * Stamp the caller's own `last_seen_at`.
+       *
+       * A function rather than a direct update because `app_users` is
+       * owner-write-only, and widening that with a self-row policy would let
+       * anyone set their own `role` - RLS gates rows, not columns.
+       */
+      touch_last_seen: {
+        Args: Record<string, never>;
+        Returns: void;
+      };
     };
     Enums: {
       user_role: UserRole;

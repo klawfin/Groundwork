@@ -53,9 +53,12 @@
  *   node scripts/demo.mjs --accounts      accounts only, no data
  *   node scripts/demo.mjs --reset         delete the fabricated clients, then reseed
  *   node scripts/demo.mjs --link <email>  newest sign-in link from Mailpit
+ *   node scripts/demo.mjs --open          a signed-in window per role
  */
 
-import { readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -68,6 +71,7 @@ const args = new Set(argv);
 const ACCOUNTS_ONLY = args.has('--accounts');
 const RESET = args.has('--reset');
 const LINK_FOR = args.has('--link') ? argv[argv.indexOf('--link') + 1] : null;
+const OPEN = args.has('--open');
 
 /** Where `supabase start` puts local mail. Never a real inbox. */
 const MAILPIT = process.env.MAILPIT_URL ?? 'http://127.0.0.1:54324';
@@ -283,6 +287,133 @@ async function newestLink(email) {
   return found[0].replace(/&amp;/g, '&');
 }
 
+/* -------------------------------------------------------------------------- */
+/* Opening a signed-in window per role                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * THREE ROLES CANNOT LIVE IN THREE TABS.
+ *
+ * Tabs share a cookie jar, so signing in as the viewer evicts the owner's
+ * session and you end up comparing one role against itself. Comparing roles
+ * needs three separate cookie jars, which on a Chromium browser means three
+ * `--user-data-dir` profiles - three windows, not three tabs.
+ *
+ * Each window then signs ITSELF in, and it has to be that way round. The link
+ * is PKCE-bound to a code-verifier cookie set by the response to the sign-in
+ * form, so a link fetched by this script and handed to a browser that did not
+ * submit the form lands on /login?error=1. The browser posts the form, the
+ * browser gets the verifier, the browser opens the link.
+ */
+const BROWSERS = {
+  win32: [
+    `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+  ],
+  darwin: [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  ],
+  linux: ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/microsoft-edge'],
+};
+
+function findBrowser() {
+  if (process.env.BROWSER) return process.env.BROWSER;
+  for (const path of BROWSERS[process.platform] ?? []) {
+    if (existsSync(path)) return path;
+  }
+  fail(
+    'No Chromium browser found. Set BROWSER to the executable path.\n' +
+      'Firefox will not work here - the isolation flag is Chromium-specific.',
+  );
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Launch detached, so this script exiting does not take the window with it. */
+function launch(browser, profile, url) {
+  spawn(browser, [`--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', url], {
+    detached: true,
+    stdio: 'ignore',
+  }).unref();
+}
+
+/** Wait for a sign-in email that arrived AFTER we asked for one. */
+async function waitForFreshMail(email, since, timeoutMs = 25_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const list = await fetch(`${MAILPIT}/api/v1/messages?limit=50`)
+      .then((r) => r.json())
+      .catch(() => ({}));
+
+    const hit = (list.messages ?? []).find(
+      (m) =>
+        (m.To ?? []).some((to) => to.Address?.toLowerCase() === email.toLowerCase()) &&
+        // Strictly newer than the request. Without this a stale link from an
+        // earlier run gets opened, fails, and looks like a broken script.
+        new Date(m.Created).getTime() >= since,
+    );
+    if (hit) return hit.ID;
+    await sleep(700);
+  }
+  return null;
+}
+
+async function linkFromMessage(id) {
+  const body = await fetch(`${MAILPIT}/api/v1/message/${id}`).then((r) => r.json());
+  const found = /https?:\/\/[^\s"'<>]+verify[^\s"'<>]*/.exec(body.Text ?? body.HTML ?? '');
+  return found ? found[0].replace(/&amp;/g, '&') : null;
+}
+
+async function openRoleWindows(accounts, appUrl) {
+  const browser = findBrowser();
+  const root = join(tmpdir(), 'groundwork-demo-profiles');
+
+  for (const account of accounts) {
+    const profile = join(root, account.role);
+    mkdirSync(profile, { recursive: true });
+
+    // A local page that posts the sign-in form on load. The browser has to be
+    // the thing that posts it - see the note above.
+    const page = join(profile, 'signin.html');
+    writeFileSync(
+      page,
+      `<!doctype html><meta charset="utf-8"><title>${account.role} - signing in</title>
+<body style="font:15px system-ui;padding:3rem;background:#f6e9d9;color:#132849">
+Signing in as <b>${account.email}</b> (${account.role})&hellip;
+<form id="f" method="post" action="${appUrl}/auth/magic-link">
+<input type="hidden" name="email" value="${account.email}">
+</form><script>document.getElementById('f').submit()</script>`,
+    );
+
+    const since = Date.now();
+    launch(browser, profile, `file:///${page.replace(/\\/g, '/')}`);
+    process.stdout.write(`  ${account.role.padEnd(8)} window opened, waiting for the link...`);
+
+    const id = await waitForFreshMail(account.email, since);
+    if (!id) {
+      console.log(' TIMED OUT');
+      console.log(`           sign in manually in that window: ${appUrl}/login`);
+      continue;
+    }
+
+    const link = await linkFromMessage(id);
+    if (!link) {
+      console.log(' no link in the email');
+      continue;
+    }
+
+    // Same profile, so the same cookie jar that holds the verifier.
+    launch(browser, profile, link);
+    console.log(' signed in');
+  }
+
+  console.log(`\nProfiles: ${root}`);
+}
+
 /** Fabricated clients, each with one draft assessment holding a filled intake. */
 async function seedClients(ownerId) {
   const rubricVersion = readConstant('packages/rubric/src/definitions.ts', 'RUBRIC_VERSION');
@@ -423,10 +554,17 @@ async function main() {
     for (const s of seeded) console.log(`  ${s.name.padEnd(12)} ${s.status}`);
   }
 
-  console.log(`\nTo sign in:`);
-  console.log(`  1. open ${appUrl}/login and enter one of the addresses above`);
-  console.log(`  2. pnpm demo --link <address>        (or open ${MAILPIT})`);
-  console.log(`  3. open that link in the SAME browser you used for step 1`);
+  if (OPEN) {
+    console.log('\nOpening one window per role (separate profiles - tabs would share a session)\n');
+    await openRoleWindows(accounts, appUrl);
+  } else {
+    console.log(`\nTo sign in:`);
+    console.log(`  pnpm demo --open                    one signed-in window per role`);
+    console.log(`\nor by hand:`);
+    console.log(`  1. open ${appUrl}/login and enter one of the addresses above`);
+    console.log(`  2. pnpm demo --link <address>        (or open ${MAILPIT})`);
+    console.log(`  3. open that link in the SAME browser you used for step 1`);
+  }
 
   /*
    * BOTH LISTS ARE CHECKED, deliberately (decision 0001): the database trigger

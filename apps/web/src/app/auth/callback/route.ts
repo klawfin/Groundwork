@@ -63,13 +63,18 @@ export async function GET(request: Request) {
     metadata: { method: 'magic_link' },
   }).catch(() => undefined);
 
-  reportWrite(
-    `app_users.last_seen_at for ${data.session.user.id}`,
-    await db
-      .from('app_users')
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq('id', data.session.user.id),
-  );
+  // RPC, not a direct update, and the difference is not cosmetic.
+  //
+  // `app_users` is owner-write-only. A direct update here worked for the owner
+  // and silently did nothing for an analyst or a viewer - and silently is
+  // literal: on UPDATE an RLS `USING` clause filters rows rather than raising,
+  // so the result was zero rows and NO error. `reportWrite` inspects `error`,
+  // so the guard built to catch exactly this class could not see it.
+  //
+  // `touch_last_seen` is SECURITY DEFINER, takes no arguments, and writes only
+  // this column for `auth.uid()`. Granting the row instead would let any
+  // viewer promote themselves, since RLS cannot restrict columns.
+  reportWrite(`last_seen_at for ${data.session.user.id}`, await db.rpc('touch_last_seen'));
 
   return NextResponse.redirect(new URL(next ?? '/clients', env.APP_URL));
 }

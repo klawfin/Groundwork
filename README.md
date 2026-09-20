@@ -110,8 +110,17 @@ you locked out. Never commit a real address to it.
 
 ```bash
 pnpm demo                          # 3 accounts (owner/analyst/viewer) + 2 fabricated clients
+pnpm demo --open                   # one signed-in window per role
 pnpm demo --link demo.owner@groundwork.local
 ```
+
+`--open` gives you all three roles side by side. **Separate windows, not tabs** —
+tabs share a cookie jar, so signing in as the viewer would evict the owner's
+session and you would be comparing one role against itself. Each window gets its
+own Chromium `--user-data-dir`, posts the sign-in form itself, and then opens its
+own link; the browser has to be the thing that posts the form, because the link
+is PKCE-bound to a cookie that response sets. Needs Chrome or Edge — set
+`BROWSER` to override the path.
 
 There is no demo password, deliberately — magic link with an allowlist was
 chosen so that no single shared string signs anyone in. `pnpm demo` creates the
