@@ -15,7 +15,10 @@
     "test:coverage": "vitest run --coverage",
     "db:migrate": "supabase db push",
     "db:seed": "supabase db execute --file supabase/seed.sql",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "check:palette": "node scripts/check-palette.mjs",
+    "check:palette:built": "node scripts/check-palette.mjs --built",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:palette"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

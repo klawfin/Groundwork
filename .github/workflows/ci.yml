@@ -1,0 +1,192 @@
+name: CI
+
+# Every push and every PR. The unit suite needs no services, so the fast job
+# gives an answer in about a minute; the integration job spins up a real
+# Postgres because that is where every serious defect in this project has been.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push supersedes the run in flight. Nobody reads the results of a
+  # commit that has already been replaced.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned deliberately. "latest" turns an unrelated upstream release into a
+  # red build on somebody else's Tuesday.
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.13.1'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast gate. Fails in ~60s on the things that are cheap to check.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Lint, types, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install
+        # --frozen-lockfile: CI must build what the lockfile says, not resolve
+        # something new. A CI that silently upgrades is a CI that tests a tree
+        # nobody has.
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit and pipeline tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+        env:
+          # Build-time only. The app validates real env at runtime; these exist
+          # so `next build` can statically analyse without a live project.
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: build-time-placeholder
+
+  # ---------------------------------------------------------------------------
+  # Integration. Real Postgres, real migrations, real RLS.
+  #
+  # This job is the reason CI exists. Every defect that reached a running system
+  # in this project lived in a seam between the application and the database -
+  # a trigger, a policy, a constraint - and none of them were visible to the
+  # job above.
+  # ---------------------------------------------------------------------------
+  integration:
+    name: Integration (real database)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase
+        run: supabase start
+
+      - name: Verify every migration applied
+        # `supabase start` applies migrations. If one failed it would be easy to
+        # miss in the log, so assert the schema afterwards rather than trusting
+        # a zero exit code.
+        run: |
+          supabase db diff --schema public > /tmp/drift.txt 2>&1 || true
+          if grep -qi "create table\|alter table" /tmp/drift.txt; then
+            echo "::error::Schema drift between migrations and the running database"
+            cat /tmp/drift.txt
+            exit 1
+          fi
+
+      - name: Integration tests
+        run: pnpm test:integration
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop
+
+  # ---------------------------------------------------------------------------
+  # Security and supply chain. Non-blocking on advisories with no fix available,
+  # blocking on secrets.
+  # ---------------------------------------------------------------------------
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Secret scanning needs history, not just the tip.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Dependency audit
+        # Advisories arrive faster than fixes do. This reports without blocking
+        # the merge; `audit --prod --audit-level high` is the gate to tighten to
+        # once the noise level is known.
+        run: pnpm audit --audit-level moderate || true
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: No real client data in the repo
+        # readme.md rule 9. Fixtures are fabricated; a real company name or a
+        # real email in a fixture is a data-protection incident, not a typo.
+        run: |
+          if grep -rniE '@(gmail|outlook|yahoo|hotmail)\.com' \
+               --include='*.ts' --include='*.tsx' --include='*.sql' \
+               packages apps supabase 2>/dev/null; then
+            echo "::error::A real-looking personal email address is committed. Fabricate test data."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # The palette constraint, enforced.
+  #
+  # The brand kit is seven colours. A Tailwind default sneaking back in is not a
+  # visual nitpick - it is the design system quietly ceasing to be true, and it
+  # is invisible in review because the diff looks like any other class change.
+  # ---------------------------------------------------------------------------
+  design-tokens:
+    name: Palette
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: No legacy Tailwind colour classes
+        run: pnpm check:palette

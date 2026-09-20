@@ -58,6 +58,7 @@ import {
 } from '@klawfin/llm';
 
 import { writeAudit, type AuditContext } from '../audit/log';
+import { reportWrite } from '../db/writeGuard';
 import { parseServerEnv } from '../config/env';
 import type { Actor } from '../auth/session';
 import type { Database, GenerationOutcome } from '../db/types';
@@ -195,7 +196,10 @@ export async function runGeneration(
   // machine that was never going to have one.
   const offline = env.DISABLE_LLM_GENERATION || env.provider === 'none';
 
-  await db.from('assessments').update({ status: 'generating' }).eq('id', assessmentId);
+  reportWrite(
+    `assessments.status=generating for ${assessmentId}`,
+    await db.from('assessments').update({ status: 'generating' }).eq('id', assessmentId),
+  );
 
   await writeAudit(db, {
     ...audit,
@@ -260,13 +264,19 @@ export async function runGeneration(
     // Back to `scored`, not `failed`: the intake and the score are intact and
     // the operator can retry or export the fallback report. `failed` would
     // suggest the assessment itself is unusable, which it is not.
-    await db
-      .from('assessments')
-      .update({
-        status: 'scored',
-        cost_actual_paise: assessment.cost_actual_paise + produced.costPaise,
-      })
-      .eq('id', assessmentId);
+    // The cost update matters beyond bookkeeping: `cost_actual_paise` feeds
+    // the pre-flight budget gate on the NEXT generation. Losing it silently
+    // means the cap is computed against an under-reported total.
+    reportWrite(
+      `assessments.cost_actual after failure for ${assessmentId}`,
+      await db
+        .from('assessments')
+        .update({
+          status: 'scored',
+          cost_actual_paise: assessment.cost_actual_paise + produced.costPaise,
+        })
+        .eq('id', assessmentId),
+    );
 
     return {
       ok: false,
@@ -335,7 +345,10 @@ export async function runGeneration(
     .single();
 
   if (narrativeError || !narrativeRow) {
-    await db.from('assessments').update({ status: 'scored' }).eq('id', assessmentId);
+    reportWrite(
+      `assessments.status=scored after narrative save failure for ${assessmentId}`,
+      await db.from('assessments').update({ status: 'scored' }).eq('id', assessmentId),
+    );
     return refuse('failed', 'The narrative was generated but could not be saved.', 500);
   }
 
@@ -360,13 +373,16 @@ export async function runGeneration(
     audit,
   });
 
-  await db
-    .from('assessments')
-    .update({
-      status: 'review',
-      cost_actual_paise: assessment.cost_actual_paise + produced.costPaise,
-    })
-    .eq('id', assessmentId);
+  reportWrite(
+    `assessments.cost_actual after success for ${assessmentId}`,
+    await db
+      .from('assessments')
+      .update({
+        status: 'review',
+        cost_actual_paise: assessment.cost_actual_paise + produced.costPaise,
+      })
+      .eq('id', assessmentId),
+  );
 
   return {
     ok: true,
@@ -457,7 +473,13 @@ async function liveNarrative(db: Db, input: LiveInput): Promise<Produced> {
   const prompt = assemblePrompt(input.facts);
 
   // Rule 1 above: the ledger row exists before any money can be spent.
-  const { data: ledger } = await db
+  //
+  // THE ERROR IS CHECKED, and that is not defensive padding. This insert was
+  // silently rejected by RLS for the whole life of the project - `llm_calls`
+  // had a SELECT policy and nothing else - and because the error was discarded
+  // the ledger simply stayed empty while generations appeared to succeed. The
+  // policy is fixed (migration 20260920000100); this makes a recurrence loud.
+  const { data: ledger, error: ledgerError } = await db
     .from('llm_calls')
     .insert({
       assessment_id: input.assessmentId,
@@ -476,6 +498,22 @@ async function liveNarrative(db: Db, input: LiveInput): Promise<Produced> {
     .select('id')
     .single();
 
+  if (ledgerError || !ledger) {
+    // REFUSE TO SPEND. An API call whose cost cannot be recorded is worse than
+    // one that does not happen: the money leaves and nothing in the system
+    // knows. The operator can still export the fallback report.
+    return {
+      ok: false,
+      outcome: 'failed',
+      message:
+        'Could not open the cost ledger, so no call was made. Generation is blocked until spending can be recorded.',
+      costPaise: 0,
+      attempts: 0,
+      latencyMs: null,
+      useFallback: true,
+    };
+  }
+
   const result = await generateNarrative({
     facts: input.facts,
     provider: input.provider,
@@ -489,8 +527,8 @@ async function liveNarrative(db: Db, input: LiveInput): Promise<Produced> {
 
   const costPaise = result.ok ? result.cost.totalPaise : (result.cost?.totalPaise ?? 0);
 
-  if (ledger) {
-    await db
+  {
+    const { error: updateError } = await db
       .from('llm_calls')
       .update({
         input_tokens: result.ok ? result.usage.inputTokens : 0,
@@ -505,6 +543,16 @@ async function liveNarrative(db: Db, input: LiveInput): Promise<Produced> {
         completed_at: new Date().toISOString(),
       })
       .eq('id', ledger.id);
+
+    if (updateError) {
+      // The call happened and the money is spent. The row exists but is stuck
+      // at 'pending' with zero usage, so say so rather than letting the cost
+      // view quietly under-report.
+      console.error(
+        `[generation] ledger row ${ledger.id} could not be completed: ${updateError.message}. ` +
+          `Cost of ${costPaise} paise is NOT recorded against it.`,
+      );
+    }
   }
 
   if (!result.ok) {
@@ -549,7 +597,10 @@ interface OutcomeInput {
 }
 
 async function recordOutcome(db: Db, input: OutcomeInput): Promise<void> {
-  await db.from('generations').insert({
+  // Rule 3 at the top of this file: a generation that vanished is
+  // indistinguishable from one that never started. A discarded error here is
+  // exactly how it vanishes.
+  const outcome = await db.from('generations').insert({
     assessment_id: input.assessmentId,
     narrative_id: input.narrativeId,
     outcome: input.outcome,
@@ -560,6 +611,7 @@ async function recordOutcome(db: Db, input: OutcomeInput): Promise<void> {
     truncation_notices: [],
     started_by: input.startedBy,
   });
+  reportWrite(`generations.insert for assessment ${input.assessmentId}`, outcome);
 
   const succeeded =
     input.outcome === 'success' || input.outcome === 'success_after_retry' || input.outcome === 'fallback';

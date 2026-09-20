@@ -30,6 +30,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Do not announce the framework and version. It is free reconnaissance for
+  // anyone matching a CVE against a banner, and it buys nothing.
+  poweredByHeader: false,
   // Workspace packages ship TypeScript source; Next compiles them (see 0012).
   transpilePackages: ['@klawfin/core', '@klawfin/rubric', '@klawfin/validation', '@klawfin/llm'],
   // react-pdf must run in the Node runtime, never Edge. (Renamed out of

@@ -29,6 +29,7 @@ import { resolveActor } from '@/lib/auth/session';
 import { admin } from '@/lib/db/admin';
 import { serverClient } from '@/lib/db/client';
 import { writeAudit } from '@/lib/audit/log';
+import { reportWrite } from '@/lib/db/writeGuard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -105,13 +106,14 @@ export async function GET(
   // Incremented, not set. This assigned a literal 1, so the counter stopped at
   // one however many times a report was downloaded - which quietly made it
   // useless as the "was this actually delivered" signal it exists to be.
-  await db
+  const counted = await db
     .from('reports')
     .update({
       download_count: report.download_count + 1,
       last_downloaded_at: new Date().toISOString(),
     })
     .eq('id', report.id);
+  reportWrite(`reports.download_count for ${report.id}`, counted);
 
   return NextResponse.redirect(signed.signedUrl);
 }

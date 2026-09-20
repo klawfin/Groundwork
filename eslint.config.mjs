@@ -100,9 +100,20 @@ export default tseslint.config(
     },
   },
 
-  // Config files run in Node and legitimately reach for its globals.
+  /**
+   * Config files and build scripts run in Node and legitimately reach for its
+   * globals. Without this, `scripts/check-palette.mjs` - which exists to fail
+   * the build - could not itself pass the build.
+   */
   {
-    files: ['*.config.{ts,mjs,js}', '**/*.config.{ts,mjs,js}'],
-    languageOptions: { globals: { process: 'readonly', __dirname: 'readonly' } },
+    files: ['*.config.{ts,mjs,js}', '**/*.config.{ts,mjs,js}', 'scripts/**/*.{mjs,js,ts}'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        __dirname: 'readonly',
+        Buffer: 'readonly',
+      },
+    },
   },
 );

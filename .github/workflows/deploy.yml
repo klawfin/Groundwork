@@ -1,0 +1,143 @@
+name: Deploy
+
+# Manual, or on a tag. NOT on every push to main.
+#
+# This tool holds client financial data and has one operator. An automatic
+# deploy on merge means a schema migration can reach production while nobody is
+# watching, and the retention job that runs against it is irreversible. The cost
+# of a deliberate button press is seconds; the cost of the alternative is a
+# purge nobody authorised.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+  push:
+    tags: ['v*']
+
+concurrency:
+  # Never two deploys at once. Migrations are not reentrant.
+  group: deploy-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.13.1'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Re-verify. The CI run on the commit may be hours old and its dependencies
+  # may have been yanked since.
+  # ---------------------------------------------------------------------------
+  gate:
+    name: Re-verify before shipping
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+
+  migrate:
+    name: Database migrations
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+
+      - name: Show what would change
+        # DRY RUN FIRST, in the log, before anything is applied. A migration
+        # that drops a column is indistinguishable from one that adds an index
+        # until somebody reads the diff.
+        run: supabase db diff --linked --schema public || true
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: Apply
+        run: supabase db push --linked
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: Verify write policies survived
+        # Migrations have removed a policy before. The application writes to
+        # eleven tables; if one loses its policy the failure is SILENT, so
+        # assert it here rather than discovering it from an empty ledger.
+        run: |
+          supabase db execute --linked --file scripts/assert-write-policies.sql
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+  deploy:
+    name: Deploy web
+    needs: migrate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: '${{ env.PNPM_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+
+      - name: Deploy to Vercel
+        run: |
+          pnpm dlx vercel@latest pull --yes \
+            --environment=${{ github.event.inputs.environment || 'production' }} \
+            --token=$VERCEL_TOKEN
+          pnpm dlx vercel@latest build ${{ github.event.inputs.environment == 'staging' && ' ' || '--prod' }} --token=$VERCEL_TOKEN
+          pnpm dlx vercel@latest deploy --prebuilt ${{ github.event.inputs.environment == 'staging' && ' ' || '--prod' }} --token=$VERCEL_TOKEN
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  smoke:
+    name: Post-deploy smoke test
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Health, headers and auth guard
+        # Three things, all of which have broken before:
+        #   - the app can reach its database
+        #   - security headers are actually served
+        #   - an unauthenticated request is redirected, not served
+        run: |
+          set -euo pipefail
+          BASE="${{ vars.APP_URL }}"
+
+          echo "health:"
+          curl -sf "$BASE/api/health" | tee /tmp/health.json
+          grep -q '"database":"ok"' /tmp/health.json
+
+          echo "headers:"
+          HEADERS=$(curl -sI "$BASE/login")
+          echo "$HEADERS" | grep -qi 'strict-transport-security' || { echo "::error::HSTS missing"; exit 1; }
+          echo "$HEADERS" | grep -qi 'x-frame-options: DENY'      || { echo "::error::X-Frame-Options missing"; exit 1; }
+          echo "$HEADERS" | grep -qi 'x-powered-by'               && { echo "::error::X-Powered-By is leaking"; exit 1; }
+
+          echo "auth guard:"
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/clients")
+          [ "$CODE" = "307" ] || [ "$CODE" = "302" ] || { echo "::error::/clients served $CODE unauthenticated"; exit 1; }
+
+          echo "all smoke checks passed"

@@ -16,6 +16,7 @@ import { cookies, headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 import { auditContextFromHeaders, writeAudit } from '@/lib/audit/log';
+import { reportWrite } from '@/lib/db/writeGuard';
 import { serverClient } from '@/lib/db/client';
 import { isAllowedEmail, parseServerEnv } from '@/lib/config/env';
 
@@ -62,10 +63,13 @@ export async function GET(request: Request) {
     metadata: { method: 'magic_link' },
   }).catch(() => undefined);
 
-  await db
-    .from('app_users')
-    .update({ last_seen_at: new Date().toISOString() })
-    .eq('id', data.session.user.id);
+  reportWrite(
+    `app_users.last_seen_at for ${data.session.user.id}`,
+    await db
+      .from('app_users')
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq('id', data.session.user.id),
+  );
 
   return NextResponse.redirect(new URL(next ?? '/clients', env.APP_URL));
 }

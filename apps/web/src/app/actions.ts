@@ -25,6 +25,7 @@ import { resolveActor, canWrite, canViewCosts, type Actor } from '../lib/auth/se
 import { serverClient } from '../lib/db/client';
 import { admin } from '../lib/db/admin';
 import { executeClientDeletion } from '../lib/db/deletion';
+import { reportWrite } from '../lib/db/writeGuard';
 import { runRetentionPurge, summarisePurge } from '../lib/db/retention';
 import { writeAudit, type AuditContext } from '../lib/audit/log';
 import {
@@ -736,9 +737,11 @@ export async function executeDeletionAction(
     return { ok: false, error: outcome.message };
   }
 
-  // The request row survives its client: it is the record that the deletion
-  // happened, and the only remaining place that says so.
-  await service
+  // The request row survives its client: after execution it is the ONLY
+  // remaining record that the deletion happened, because the client it refers
+  // to no longer exists. Losing this write silently leaves a request that
+  // looks unactioned and nothing to disprove it.
+  const marked = await service
     .from('deletion_requests')
     .update({
       status: 'executed',
@@ -748,6 +751,7 @@ export async function executeDeletionAction(
       execution_note: outcome.message,
     })
     .eq('id', id.data);
+  reportWrite(`deletion_requests.executed for ${id.data}`, marked);
 
   revalidatePath('/clients');
   return { ok: true, data: { message: outcome.message, orphanedPaths: outcome.orphanedPaths } };
