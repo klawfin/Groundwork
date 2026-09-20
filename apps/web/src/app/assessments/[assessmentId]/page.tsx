@@ -2,7 +2,7 @@ import { cookies, headers } from 'next/headers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { notFound, redirect } from 'next/navigation';
 
-import { emptyIntake } from '@klawfin/core';
+import { parseIntake } from '@klawfin/core';
 
 import { resolveActor } from '@/lib/auth/session';
 import { serverClient } from '@/lib/db/client';
@@ -55,7 +55,19 @@ export default async function AssessmentPage({
 
       <IntakeForm
         assessmentId={assessment.id}
-        initialIntake={assessment.intake_data ?? emptyIntake()}
+        // PARSED, NOT CAST, and the difference was a 500 on every new
+        // assessment. `intake_data` is created with the column default `{}`,
+        // which is neither null nor undefined, so the `??` here never fired
+        // and a bare object was handed to the form as an `Intake`. Every
+        // section was then undefined, and the contradiction engine reached
+        // `traction.mrr_by_month.length` on nothing - so the page was broken
+        // from the moment "Start assessment" was pressed until the first
+        // autosave happened to write a complete intake over the top of it.
+        //
+        // `parseIntake` fills the schema defaults, which is the one thing a
+        // JSONB column cannot do for itself (architecture ADR-005: with JSONB
+        // storage, zod is the only thing standing between a bug and bad data).
+        initialIntake={parseIntake(assessment.intake_data ?? {})}
         // Passed from the server so date-relative contradiction checks do not
         // depend on the browser's clock.
         asOf={new Date().toISOString()}

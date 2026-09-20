@@ -61,7 +61,7 @@ docs/decisions/     One record per resolved OPEN- item
 
 ```bash
 pnpm install
-pnpm test                          # 303 tests, no external services needed
+pnpm test                          # 325 tests, no external services needed
 pnpm typecheck                     # whole workspace
 ```
 
@@ -76,7 +76,7 @@ Needs Docker Desktop running.
 npx supabase start                 # applies every migration, seeds the allowlist
 cp .env.example apps/web/.env      # then fill it in
 pnpm --filter @klawfin/web dev
-pnpm test:integration              # 19 tests against the real database
+pnpm test:integration              # 23 tests against the real database
 ```
 
 **`apps/web/.env`, not the repository root.** Next.js loads environment files
@@ -106,14 +106,44 @@ docker exec supabase_db_klawfin psql -U postgres -d postgres -c   "insert into a
 `supabase/seed.sql` provides `dev@groundwork.local` so a `db reset` never leaves
 you locked out. Never commit a real address to it.
 
+#### Demo and QA accounts
+
+```bash
+pnpm demo                          # 3 accounts (owner/analyst/viewer) + 2 fabricated clients
+pnpm demo --link demo.owner@groundwork.local
+```
+
+There is no demo password, deliberately — magic link with an allowlist was
+chosen so that no single shared string signs anyone in. `pnpm demo` creates the
+accounts through the auth admin API, which fires the same allowlist trigger a
+real sign-in does, then seeds two invented companies:
+
+| | |
+|---|---|
+| **Marrowfield** | revenue stage, 98% coverage, scores 88 — *Raise-ready*. The clean run to a PDF. |
+| **Sundermere** | pre-revenue, 48% coverage, scores 46 — *Significant gaps*. Exercises the substitute ladder and carries one deliberate warning. |
+
+The script **refuses to run against anything but a local stack**, because
+against a hosted project it would be an account-creation backdoor.
+
+**The magic link only works in the browser that submitted the sign-in form.**
+The app uses PKCE: submitting the form sets a code-verifier cookie, and the
+link is exchanged against it. Pasting a link into a different browser — or
+using one minted by `admin/generate_link`, which returns the session in a URL
+fragment the server never sees — lands on `/login?error=1` with no explanation,
+by design. So: open `/login` in your browser, enter the address, then run
+`pnpm demo --link <address>` and open the result in that same browser.
+
 Two things to know when sign-in misbehaves:
 
 - Supabase **silently drops** a magic link whose redirect is not in its allow
   list. Keep `additional_redirect_urls` in `supabase/config.toml` in step with
   `APP_URL`. The route logs the reason to the server console; the browser
   deliberately sees the same generic message either way.
-- Repeated sends to the same address are throttled. Use a second allowlisted
-  address while testing rather than chasing a phantom failure.
+- Two sends to the same address within a second: the second is dropped in
+  silence (`max_frequency` in `supabase/config.toml`). The hourly `email_sent`
+  limit in the same file does **not** apply locally — it needs a custom SMTP
+  server, and local mail goes to Mailpit. Measured, not assumed.
 
 Leave `DISABLE_LLM_GENERATION=true` for all UI work. The whole pipeline —
 generation, guardrails, review screen, export, audit trail — runs offline at no
@@ -171,6 +201,11 @@ pnpm build        # production build — must pass before any deploy
 pnpm typecheck    # tsc --noEmit across the workspace
 pnpm test         # unit tests
 pnpm test:coverage
+pnpm verify       # lint + typecheck + test + palette — what the pre-push hook runs
+
+pnpm demo         # demo/QA accounts and fabricated clients (local stack only)
+pnpm db:seed      # apply supabase/seed.sql without a full reset
+pnpm check:palette
 ```
 
 ### Where the tests are, and why there

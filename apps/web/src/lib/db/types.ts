@@ -107,6 +107,19 @@ export type AssessmentRow = {
   status: AssessmentStatus;
   rubric_version: string;
   intake_schema_version: string;
+  /**
+   * TYPED AS `Intake`, BUT ONLY TRUE ONCE SOMETHING HAS WRITTEN ONE.
+   *
+   * The column default is `{}` (core_tables.sql), so a freshly created
+   * assessment carries an empty object with every section missing, and this
+   * type asserts otherwise. Reads AFTER the intake is locked are safe -
+   * `saveIntake` writes a parsed intake - which is why every consumer except
+   * the assessment page happens to be fine.
+   *
+   * The page was not fine: it handed this straight to the form and every new
+   * assessment was a 500 until the first autosave. Anything reading this on a
+   * DRAFT assessment must go through `parseIntake` first.
+   */
   intake_data: Intake;
   intake_locked_at: string | null;
   ask_amount_paise: number | null;

@@ -113,6 +113,12 @@ export default tseslint.config(
         console: 'readonly',
         __dirname: 'readonly',
         Buffer: 'readonly',
+        // Web-standard globals that Node has had since 18. `fetch` in
+        // particular is why scripts/demo.mjs needs no Supabase client
+        // dependency to talk to PostgREST and the auth admin API.
+        fetch: 'readonly',
+        URL: 'readonly',
+        AbortSignal: 'readonly',
       },
     },
   },

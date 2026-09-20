@@ -76,11 +76,15 @@ jobs:
         # Migrations have removed a policy before. The application writes to
         # eleven tables; if one loses its policy the failure is SILENT, so
         # assert it here rather than discovering it from an empty ledger.
-        run: |
-          supabase db execute --linked --file scripts/assert-write-policies.sql
+        #
+        # RUN WITH psql, NOT THE SUPABASE CLI. An earlier version of this step
+        # called `supabase db execute`, which does not exist - the CLI has no
+        # arbitrary-SQL subcommand at all. The step would have failed the
+        # deploy on its first real run, for the wrong reason, and the check it
+        # was supposed to perform had never run once.
+        run: psql -v ON_ERROR_STOP=1 -f scripts/assert-write-policies.sql "$SUPABASE_DB_URL"
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
 
   deploy:
     name: Deploy web

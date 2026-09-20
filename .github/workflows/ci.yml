@@ -110,6 +110,15 @@ jobs:
             exit 1
           fi
 
+      - name: Every table the app writes to has a write policy
+        # The same assertion the deploy runs, run here too, because here is
+        # where it is cheap. Two tables silently could not be written for the
+        # entire life of the project; nothing failed, nothing logged, and the
+        # build stayed green the whole time.
+        run: psql -v ON_ERROR_STOP=1 -f scripts/assert-write-policies.sql "$DB_URL"
+        env:
+          DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+
       - name: Integration tests
         run: pnpm test:integration
 
