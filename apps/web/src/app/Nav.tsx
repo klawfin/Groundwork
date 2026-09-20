@@ -28,7 +28,7 @@ export async function Nav() {
   return (
     <nav className="bg-inverse text-on-inverse">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-7 gap-y-2 px-6 py-3.5">
-        <a href="/clients" className="group flex items-baseline gap-2">
+        <a href="/" className="group flex items-baseline gap-2">
           <span className="font-serif text-[17px] font-semibold tracking-tight">
             {PRODUCT_NAME}
           </span>
@@ -41,6 +41,7 @@ export async function Nav() {
         </a>
 
         <div className="flex items-center gap-6 text-sm">
+          <NavLink href="/">Overview</NavLink>
           <NavLink href="/clients">Clients</NavLink>
           {canViewCosts(auth.actor) && (
             <>

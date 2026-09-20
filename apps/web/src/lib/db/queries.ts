@@ -12,7 +12,13 @@ import { INTAKE_SCHEMA_VERSION, parseIntake, type Intake } from '@klawfin/core';
 import { RUBRIC_VERSION, type ScoreResult } from '@klawfin/rubric';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { AssessmentRow, AssessmentScoreRow, ClientRow, Database } from './types';
+import type {
+  AssessmentRow,
+  AssessmentScoreRow,
+  AssessmentStatus,
+  ClientRow,
+  Database,
+} from './types';
 
 type Db = SupabaseClient<Database>;
 
@@ -247,4 +253,73 @@ export function toScoreRows(
     // "why did I score 2 on cap table hygiene" from the record alone (PRD G3).
     sub_criteria: [...d.subCriteria],
   }));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Pipeline (overview)                                                        */
+/* -------------------------------------------------------------------------- */
+
+/** One engagement's position in the pipeline, joined to the company name. */
+export interface PipelineRow {
+  assessmentId: string;
+  clientId: string;
+  clientName: string;
+  status: AssessmentStatus;
+  composite: number | null;
+  band: string | null;
+  coverage: number | null;
+  /** Coverage below the gate was accepted with a written reason (PRD 8.1). */
+  coverageOverridden: boolean;
+  costPaise: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Every assessment the caller may see, with its client's name.
+ *
+ * TWO QUERIES AND A JOIN IN MEMORY, not a PostgREST embed. An embed would be
+ * one round trip, but the row types in `types.ts` describe flat tables and an
+ * embedded object has no type to stand on - the call site would end up casting,
+ * which is how `intake_data` came to be typed as something it was not. At one
+ * operator and tens of rows the extra round trip is not measurable.
+ *
+ * RLS scopes both halves, so this needs no filtering of its own beyond
+ * excluding soft-deleted and archived records.
+ */
+export async function listPipeline(db: Db): Promise<PipelineRow[]> {
+  const [assessments, clients] = await Promise.all([
+    db
+      .from('assessments')
+      .select(
+        'id, client_id, status, composite_score, composite_band, overall_coverage, coverage_override_reason, cost_actual_paise, created_at, updated_at',
+      )
+      .is('deleted_at', null)
+      .order('updated_at', { ascending: false }),
+    db.from('clients').select('id, legal_name').is('archived_at', null).is('deleted_at', null),
+  ]);
+
+  if (assessments.error) fail('Could not load the pipeline', assessments.error.message);
+  if (clients.error) fail('Could not load clients for the pipeline', clients.error.message);
+
+  const nameOf = new Map((clients.data ?? []).map((c) => [c.id, c.legal_name]));
+
+  return (assessments.data ?? [])
+    // An assessment whose client is archived is not dropped by RLS, only by
+    // this join. Dropping it is right: the overview answers "what needs doing",
+    // and an archived engagement needs nothing.
+    .filter((row) => nameOf.has(row.client_id))
+    .map((row) => ({
+      assessmentId: row.id,
+      clientId: row.client_id,
+      clientName: nameOf.get(row.client_id)!,
+      status: row.status,
+      composite: row.composite_score,
+      band: row.composite_band,
+      coverage: row.overall_coverage,
+      coverageOverridden: row.coverage_override_reason !== null,
+      costPaise: row.cost_actual_paise ?? 0,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
 }
