@@ -19,6 +19,6 @@
       "@/*": ["./apps/web/src/*"]
     }
   },
-  "include": ["packages/*/src/**/*", "packages/*/tests/**/*", "apps/web/src/**/*", "apps/web/*.ts"],
+  "include": ["packages/*/src/**/*", "packages/*/tests/**/*", "apps/web/src/**/*", "apps/web/tests/**/*", "apps/web/*.ts"],
   "exclude": ["node_modules", "**/.next", "**/dist"]
 }

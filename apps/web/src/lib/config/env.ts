@@ -131,7 +131,14 @@ export type ServerEnv = z.infer<typeof serverSchema> & {
  * Exported as a function rather than a module-level constant so it is unit
  * testable without mutating the real process environment.
  */
-export function parseServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
+export function parseServerEnv(
+  // A plain record, not `NodeJS.ProcessEnv`. Next's global types declare
+  // `NODE_ENV` as REQUIRED on ProcessEnv, which is a claim about the real
+  // process - not about what this function needs. It defaults NODE_ENV itself
+  // (see serverSchema), so demanding it in the signature was simply wrong, and
+  // Next 16 started type-checking the tests that proved it.
+  source: Readonly<Record<string, string | undefined>> = process.env,
+): ServerEnv {
   const parsed = serverSchema.safeParse(source);
   if (!parsed.success) {
     throw new Error(formatEnvError('server', parsed.error));

@@ -30,13 +30,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -77,13 +77,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -91,12 +91,21 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
           version: latest
 
       - name: Start Supabase
-        run: supabase start
+        # Only the services the integration tests touch: Postgres, auth, REST,
+        # the Kong gateway in front of them, and storage (the RLS suite asserts
+        # the reports bucket is private).
+        #
+        # A bare `supabase start` pulls thirteen images, and a Dependabot run
+        # once failed on nothing but `toomanyrequests` from the registry while
+        # pulling logflare and realtime - services no test here uses. Every
+        # image not pulled is one fewer way for CI to go red for a reason that
+        # has nothing to do with the code.
+        run: supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 
       - name: Verify every migration applied
         # `supabase start` applies migrations. If one failed it would be easy to
@@ -136,17 +145,23 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      # Needed by the secret scan, and its absence failed this job on EVERY
+      # pull request - not only Dependabot's - with `403 Resource not
+      # accessible by integration`. On a pull request gitleaks lists the PR's
+      # commits through the API to know what to scan; on a push to main it
+      # does not, which is why main stayed green and hid it. Read-only.
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Secret scanning needs history, not just the tip.
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -161,7 +176,7 @@ jobs:
         run: pnpm audit --audit-level moderate || true
 
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -188,11 +203,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm

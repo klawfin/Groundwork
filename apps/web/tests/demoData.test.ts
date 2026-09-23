@@ -23,8 +23,10 @@ import { intakeSchema } from '@klawfin/core';
 import { scoreIntake } from '@klawfin/rubric';
 import { checkContradictions } from '@klawfin/validation';
 
-// @ts-expect-error - plain .mjs data module, deliberately not TypeScript: it is
-// also imported by scripts/demo.mjs, which runs under bare node with no build.
+// A plain .mjs data module, deliberately not TypeScript: it is also imported by
+// scripts/demo.mjs, which runs under bare node with no build step. `allowJs`
+// lets the compiler infer its shape, so no directive is needed - an earlier
+// `@ts-expect-error` here only held while nothing was type-checking this file.
 import { DEMO_ACCOUNTS, DEMO_CLIENTS } from '../../../scripts/demo-data.mjs';
 
 interface DemoClient {
@@ -107,7 +109,16 @@ describe.each(clients.map((c) => [c.client.brand_name as string, c] as const))(
 );
 
 describe('the two demo companies cover different paths', () => {
-  const [marrowfield, sundermere] = clients.map((c) => intakeSchema.parse(c.intake));
+  // By name, not by position. Destructuring the array would type each company
+  // as possibly undefined and would silently swap them if the dataset were
+  // ever reordered - and these two assertions point in opposite directions.
+  const intakeOf = (brand: string) => {
+    const found = clients.find((c) => c.client.brand_name === brand);
+    if (!found) throw new Error(`Demo company ${brand} is missing from scripts/demo-data.mjs`);
+    return intakeSchema.parse(found.intake);
+  };
+  const marrowfield = intakeOf('Marrowfield');
+  const sundermere = intakeOf('Sundermere');
 
   it('puts the pre-revenue company into pre-revenue mode and the other not', () => {
     // The substitute ladder (PRD 8.4) is the single hardest part of the rubric

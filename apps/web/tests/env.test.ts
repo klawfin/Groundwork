@@ -15,7 +15,7 @@ const base = {
   ANTHROPIC_API_KEY: 'anthropic-key-placeholder',
   AUTH_ALLOWED_EMAILS: 'dhruv@example.invalid, nikhil@example.invalid',
   APP_URL: 'https://app.example.invalid',
-} satisfies NodeJS.ProcessEnv;
+} satisfies Record<string, string>;
 
 describe('parseServerEnv', () => {
   it('parses a valid environment', () => {
