@@ -108,6 +108,20 @@ jobs:
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
         with: { version: latest }
 
+      - name: Link the production Supabase project
+        # Every `--linked` command below reads the project ref that
+        # `supabase link` writes into supabase/.temp/ - which is gitignored, so
+        # a fresh runner has nothing linked. Before this step existed, the
+        # migration job could never have succeeded: the diff hid its own
+        # failure behind `|| true`, and `db push --linked` then died with
+        # "Cannot find project ref" on the first real deploy.
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          # Not a secret: the ref is visible in the project's public URL.
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+
       - name: Show what would change
         # DRY RUN FIRST, in the log, before anything is applied. A migration
         # that drops a column is indistinguishable from one that adds an index

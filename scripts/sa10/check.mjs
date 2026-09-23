@@ -95,6 +95,16 @@ if (!deploy) {
       fail('SA-10(c)', `the deploy gate no longer requires ${required} to have passed for the commit.`);
     }
   }
+  // `--linked` needs a prior `supabase link` in the same job: the link lives
+  // in gitignored supabase/.temp/, so without it the migration step fails on
+  // every fresh runner - and the schema half of a release never ships.
+  // Commands only - comments explaining the rule mention `--linked` too.
+  const runLines = deploy.text.split('\n').filter((line) => /^\s*run:/.test(line));
+  const firstLinked = runLines.findIndex((line) => line.includes('--linked'));
+  const linkStep = runLines.findIndex((line) => /\bsupabase link\b/.test(line));
+  if (firstLinked !== -1 && (linkStep === -1 || linkStep > firstLinked)) {
+    fail('SA-10(6)', `deploy.yml runs 'supabase ... --linked' without a 'supabase link' step before it - migrations cannot reach the production database.`);
+  }
   if (!deploy.text.includes(DEPLOY_VERSION_STEP)) {
     fail('SA-10(5)', `deploy.yml has no '${DEPLOY_VERSION_STEP}' step - nothing proves the deployed build is the approved commit.`);
   }
