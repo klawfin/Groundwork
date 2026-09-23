@@ -38,6 +38,21 @@ const nextConfig: NextConfig = {
   // react-pdf must run in the Node runtime, never Edge. (Renamed out of
   // `experimental` in Next 15.)
   serverExternalPackages: ['@react-pdf/renderer'],
+  /**
+   * The commit this build was made from, fixed at BUILD time (NIST SA-10(5)).
+   *
+   * `VERCEL_GIT_COMMIT_SHA` alone is not enough: Vercel sets it for
+   * git-triggered deploys, but this project deploys from GitHub Actions with
+   * `vercel build` + `deploy --prebuilt`, where it is not reliably present -
+   * and a build that answers "local" cannot be matched against anything.
+   * `GITHUB_SHA` is set in every Actions job, so the artifact carries the
+   * exact commit that passed the deploy gate, and the post-deploy smoke test
+   * compares the two. Not a secret: a commit hash identifies code, it does not
+   * grant access to it.
+   */
+  env: {
+    BUILD_COMMIT_SHA: process.env.GITHUB_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? 'local',
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

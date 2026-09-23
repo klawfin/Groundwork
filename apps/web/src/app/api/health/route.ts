@@ -41,7 +41,9 @@ export async function GET() {
     {
       status: database === 'ok' ? 'ok' : 'degraded',
       database,
-      version: process.env.VERCEL_GIT_COMMIT_SHA ?? 'local',
+      // The commit baked in at build time (next.config.ts). The deploy smoke
+      // test matches this against the approved commit - NIST SA-10(5).
+      version: process.env.BUILD_COMMIT_SHA ?? 'local',
       latencyMs: Date.now() - startedAt,
     },
     { status: database === 'ok' ? 200 : 503 },

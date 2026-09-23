@@ -1,0 +1,59 @@
+name: Security flaws
+
+# NIST SP 800-53 SA-10(e): track security flaws and their resolution, and
+# report them to the people named in scripts/sa10/config.mjs.
+#
+# This replaces Dependabot. It opens ONE issue, never a branch or a pull
+# request, and it closes that issue itself when the findings are gone. The
+# upgrade is a human decision; knowing that one is needed is not.
+on:
+  schedule:
+    # Monday 04:17 UTC. Off the hour, because the top of the hour is when
+    # every scheduled workflow on GitHub queues at once.
+    - cron: '17 4 * * 1'
+  push:
+    # A lockfile change can introduce a flaw between Mondays.
+    branches: [main]
+    paths: ['pnpm-lock.yaml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  # Two runs editing the same issue at once would each overwrite the other.
+  group: security-flaws
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.13.1'
+
+jobs:
+  track:
+    name: Track dependency flaws
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Audit every dependency, dev included
+        # No install: the audit reads the lockfile, which is the reviewed
+        # configuration item. `|| true` because audit exits non-zero exactly
+        # when it has something to report; the tracker decides what that means
+        # and refuses a report that is not one.
+        run: pnpm audit --json > audit.json || true
+
+      - name: Open, update or close the flaw issue
+        run: node scripts/sa10/track-flaws.mjs audit.json
+        env:
+          GH_TOKEN: ${{ github.token }}

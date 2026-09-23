@@ -19,7 +19,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "check:palette": "node scripts/check-palette.mjs",
     "check:palette:built": "node scripts/check-palette.mjs --built",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:palette"
+    "check:sa10": "node scripts/sa10/check.mjs",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm check:palette && pnpm check:sa10"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

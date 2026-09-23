@@ -1,0 +1,58 @@
+name: SA-10
+
+# NIST SP 800-53 SA-10, Developer Configuration Management.
+# docs/decisions/0016-sa10-developer-configuration-management.md
+#
+# This repository commits straight to main - no branches, no pull requests -
+# so these checks run on every push to main. The deploy gate refuses any
+# commit whose run here did not pass.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sa10-${{ github.ref }}
+  # Not cancelled: every pushed commit needs its own verdict, because the
+  # deploy gate asks about one specific commit.
+  cancel-in-progress: false
+
+jobs:
+  conformance:
+    name: SA-10 configuration management
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      # Node built-ins only - no install, so this job has no supply chain of
+      # its own to trust.
+      - run: node scripts/sa10/check.mjs
+
+  change-record:
+    name: SA-10 change record
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pushed range needs the commit before it, not just the tip.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Configuration-item commits carry a Security-Impact trailer
+        # Commit messages are read by the script through git, never
+        # interpolated into this shell with ${{ }} - a commit message is
+        # author-controlled text, and interpolating it into `run:` is the
+        # textbook GitHub Actions script-injection bug.
+        run: node scripts/sa10/commit-record.mjs --range "$BEFORE" "$AFTER"
+        env:
+          # Empty on workflow_dispatch; the script then checks the tip only.
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}

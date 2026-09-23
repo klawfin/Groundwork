@@ -19,6 +19,11 @@ on:
   push:
     tags: ['v*']
 
+# Least privilege: the deploy reads the repository and nothing more. Secrets
+# are scoped by the GitHub environment, not by this token.
+permissions:
+  contents: read
+
 concurrency:
   # Never two deploys at once. Migrations are not reentrant.
   group: deploy-${{ github.event.inputs.environment || 'production' }}
@@ -37,11 +42,57 @@ jobs:
     name: Re-verify before shipping
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      # To read this commit's CI and SA-10 results. Read-only.
+      actions: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The ancestry check below needs history, not just the tip.
+          fetch-depth: 0
+
+      - name: Only approved commits deploy
+        # NIST SA-10(c): implement only organization-approved changes.
+        #
+        # This repository commits straight to main - there is no pull request
+        # to approve. "Approved" therefore means three things, all checked
+        # here against this exact commit:
+        #
+        #   1. it is on main. `workflow_dispatch` offers a ref picker and a
+        #      `v*` tag can point at any commit at all; neither may ship code
+        #      that never reached main.
+        #   2. its CI run passed - lint, types, unit, integration, security.
+        #      Being on main proves nothing about that when anyone can push.
+        #   3. its SA-10 run passed - which includes the change record
+        #      (Security-Impact trailer) for configuration items.
+        #
+        # A commit whose runs were cancelled because a newer push superseded
+        # them fails (2); deploy the newer commit instead.
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF ($GITHUB_SHA) is not on main. Only commits on main can be deployed."
+            exit 1
+          fi
+
+          for workflow in ci.yml sa10.yml; do
+            result=$(gh run list --workflow "$workflow" --commit "$GITHUB_SHA" --event push \
+                       --json conclusion -q '.[0].conclusion // "none"')
+            if [ "$result" != "success" ]; then
+              echo "::error::$workflow for $GITHUB_SHA is '$result', not 'success'. Only commits that passed CI and SA-10 can be deployed."
+              exit 1
+            fi
+            echo "$workflow passed for $GITHUB_SHA"
+          done
+          echo "$GITHUB_SHA is on main and verified - approved for deploy."
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with: { version: '${{ env.PNPM_VERSION }}' }
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: '${{ env.NODE_VERSION }}', cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
@@ -53,8 +104,8 @@ jobs:
     timeout-minutes: 15
     environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: supabase/setup-cli@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
         with: { version: latest }
 
       - name: Show what would change
@@ -93,10 +144,10 @@ jobs:
     timeout-minutes: 20
     environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with: { version: '${{ env.PNPM_VERSION }}' }
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: '${{ env.NODE_VERSION }}', cache: pnpm }
       - run: pnpm install --frozen-lockfile
 
@@ -119,7 +170,7 @@ jobs:
     timeout-minutes: 10
     environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Health, headers and auth guard
         # Three things, all of which have broken before:
@@ -135,13 +186,40 @@ jobs:
           grep -q '"database":"ok"' /tmp/health.json
 
           echo "headers:"
+          # Here-strings, not `echo | grep -q`. Under pipefail, grep -q exits
+          # on its first match and can kill echo with SIGPIPE mid-write, which
+          # reports the pipeline as FAILED - a false "HSTS missing" on a good
+          # deploy. No pipe, no race.
           HEADERS=$(curl -sI "$BASE/login")
-          echo "$HEADERS" | grep -qi 'strict-transport-security' || { echo "::error::HSTS missing"; exit 1; }
-          echo "$HEADERS" | grep -qi 'x-frame-options: DENY'      || { echo "::error::X-Frame-Options missing"; exit 1; }
-          echo "$HEADERS" | grep -qi 'x-powered-by'               && { echo "::error::X-Powered-By is leaking"; exit 1; }
+          grep -qi 'strict-transport-security' <<< "$HEADERS" || { echo "::error::HSTS missing"; exit 1; }
+          grep -qi 'x-frame-options: DENY'      <<< "$HEADERS" || { echo "::error::X-Frame-Options missing"; exit 1; }
+          if grep -qi 'x-powered-by' <<< "$HEADERS"; then echo "::error::X-Powered-By is leaking"; exit 1; fi
 
           echo "auth guard:"
           CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/clients")
           [ "$CODE" = "307" ] || [ "$CODE" = "302" ] || { echo "::error::/clients served $CODE unauthenticated"; exit 1; }
 
           echo "all smoke checks passed"
+
+      - name: Deployed version is the approved commit
+        # NIST SA-10(5) and (6): the thing now serving traffic is exactly the
+        # commit that passed review and the gate above - not a stale build, not
+        # a cached artifact, not a deploy someone ran by hand in between.
+        #
+        # The commit is baked into the build by next.config.ts (BUILD_COMMIT_SHA,
+        # from GITHUB_SHA at build time) and reported by /api/health. A mismatch
+        # here means the deploy "succeeded" and something else is live.
+        #
+        # `curl -s`, not `-sf`: the health route answers 503 when the database
+        # is down, and -f would discard the body - the version would come back
+        # empty and the error would say nothing about which build is live.
+        # Which commit is serving is a separate question from whether its
+        # database is healthy; the step above already answers the second.
+        run: |
+          set -euo pipefail
+          SERVING=$(curl -s "${{ vars.APP_URL }}/api/health" | jq -r '.version // "unreported"')
+          if [ "$SERVING" != "$GITHUB_SHA" ]; then
+            echo "::error::Production is serving '$SERVING'; the approved commit is $GITHUB_SHA."
+            exit 1
+          fi
+          echo "Serving $SERVING - matches the approved commit."

@@ -210,7 +210,10 @@ pnpm build        # production build — must pass before any deploy
 pnpm typecheck    # tsc --noEmit across the workspace
 pnpm test         # unit tests
 pnpm test:coverage
-pnpm verify       # lint + typecheck + test + palette — what the pre-push hook runs
+pnpm verify       # lint + typecheck + test + palette + SA-10 — what the pre-push hook runs
+pnpm check:sa10   # NIST SA-10 conformance (see SECURITY.md)
+
+sh scripts/install-hooks.sh   # once per clone: commit-msg (Security-Impact) + pre-push hooks
 
 pnpm demo         # demo/QA accounts and fabricated clients (local stack only)
 pnpm db:seed      # apply supabase/seed.sql without a full reset
