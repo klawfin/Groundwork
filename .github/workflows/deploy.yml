@@ -1,32 +1,36 @@
-name: Deploy
+name: Release
 
-# Manual, or on a tag. NOT on every push to main.
+# VERCEL BUILDS AND RELEASES THE APP; THIS WORKFLOW DOES WHAT VERCEL CANNOT.
 #
-# This tool holds client financial data and has one operator. An automatic
-# deploy on merge means a schema migration can reach production while nobody is
-# watching, and the retention job that runs against it is irreversible. The cost
-# of a deliberate button press is seconds; the cost of the alternative is a
-# purge nobody authorised.
+# The app ships through Vercel's GitHub integration: every push to main is
+# built, and Vercel's Deployment Checks hold that build back from
+# groundwork.klawfin.com until CI and SA-10 have passed for the commit. An
+# earlier version of this file also deployed with the Vercel CLI, which meant
+# two production paths for one app.
+#
+# What is left for this workflow, run by hand:
+#
+#   1. apply database migrations - Vercel has no access to the database, and
+#      a migration is the one change here that cannot be rolled back by
+#      redeploying an older build;
+#   2. verify what is actually live: health, security headers, the auth
+#      guard, and that the live build is the approved commit.
+#
+# ORDER, when a commit changes the schema: migrations must be backward
+# compatible (add, never rename or drop in the same release), because Vercel
+# may promote the new build before or after this workflow runs. Push the
+# migration, run this, then push the code that depends on it.
 on:
   workflow_dispatch:
-    inputs:
-      environment:
-        description: Target
-        required: true
-        default: staging
-        type: choice
-        options: [staging, production]
-  push:
-    tags: ['v*']
 
-# Least privilege: the deploy reads the repository and nothing more. Secrets
-# are scoped by the GitHub environment, not by this token.
+# Least privilege: read the repository and nothing more. Secrets are scoped by
+# the GitHub `production` environment, not by this token.
 permissions:
   contents: read
 
 concurrency:
-  # Never two deploys at once. Migrations are not reentrant.
-  group: deploy-${{ github.event.inputs.environment || 'production' }}
+  # Never two releases at once. Migrations are not reentrant.
+  group: release-production
   cancel-in-progress: false
 
 env:
@@ -34,10 +38,6 @@ env:
   PNPM_VERSION: '10.13.1'
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Re-verify. The CI run on the commit may be hours old and its dependencies
-  # may have been yanked since.
-  # ---------------------------------------------------------------------------
   gate:
     name: Re-verify before shipping
     runs-on: ubuntu-latest
@@ -59,21 +59,19 @@ jobs:
         # to approve. "Approved" therefore means three things, all checked
         # here against this exact commit:
         #
-        #   1. it is on main. `workflow_dispatch` offers a ref picker and a
-        #      `v*` tag can point at any commit at all; neither may ship code
-        #      that never reached main.
-        #   2. its CI run passed - lint, types, unit, integration, security.
-        #      Being on main proves nothing about that when anyone can push.
-        #   3. its SA-10 run passed - which includes the change record
-        #      (Security-Impact trailer) for configuration items.
+        #   1. it is on main;
+        #   2. its CI run passed - lint, types, unit, integration, security;
+        #   3. its SA-10 run passed - including the Security-Impact change
+        #      record for configuration items.
         #
-        # A commit whose runs were cancelled because a newer push superseded
-        # them fails (2); deploy the newer commit instead.
+        # The same two workflows are the Deployment Checks Vercel waits for
+        # before putting a build on the domain, so the database and the app
+        # are released on the same definition of "approved".
         run: |
           set -euo pipefail
           git fetch --quiet origin main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::$GITHUB_REF ($GITHUB_SHA) is not on main. Only commits on main can be deployed."
+            echo "::error::$GITHUB_REF ($GITHUB_SHA) is not on main. Only commits on main can be released."
             exit 1
           fi
 
@@ -81,12 +79,12 @@ jobs:
             result=$(gh run list --workflow "$workflow" --commit "$GITHUB_SHA" --event push \
                        --json conclusion -q '.[0].conclusion // "none"')
             if [ "$result" != "success" ]; then
-              echo "::error::$workflow for $GITHUB_SHA is '$result', not 'success'. Only commits that passed CI and SA-10 can be deployed."
+              echo "::error::$workflow for $GITHUB_SHA is '$result', not 'success'. Only commits that passed CI and SA-10 can be released."
               exit 1
             fi
             echo "$workflow passed for $GITHUB_SHA"
           done
-          echo "$GITHUB_SHA is on main and verified - approved for deploy."
+          echo "$GITHUB_SHA is on main and verified - approved for release."
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -102,7 +100,7 @@ jobs:
     needs: gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: ${{ github.event.inputs.environment || 'production' }}
+    environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
@@ -111,10 +109,8 @@ jobs:
       - name: Link the production Supabase project
         # Every `--linked` command below reads the project ref that
         # `supabase link` writes into supabase/.temp/ - which is gitignored, so
-        # a fresh runner has nothing linked. Before this step existed, the
-        # migration job could never have succeeded: the diff hid its own
-        # failure behind `|| true`, and `db push --linked` then died with
-        # "Cannot find project ref" on the first real deploy.
+        # a fresh runner has nothing linked. Without this step `db push` dies
+        # with "Cannot find project ref" on the first real release.
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -126,7 +122,7 @@ jobs:
         # DRY RUN FIRST, in the log, before anything is applied. A migration
         # that drops a column is indistinguishable from one that adds an index
         # until somebody reads the diff.
-        run: supabase db diff --linked --schema public || true
+        run: supabase db push --linked --dry-run
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -138,54 +134,21 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
       - name: Verify write policies survived
-        # Migrations have removed a policy before. The application writes to
-        # eleven tables; if one loses its policy the failure is SILENT, so
-        # assert it here rather than discovering it from an empty ledger.
-        #
-        # RUN WITH psql, NOT THE SUPABASE CLI. An earlier version of this step
-        # called `supabase db execute`, which does not exist - the CLI has no
-        # arbitrary-SQL subcommand at all. The step would have failed the
-        # deploy on its first real run, for the wrong reason, and the check it
-        # was supposed to perform had never run once.
+        # Migrations have removed a policy before, and an RLS gap is SILENT:
+        # the write returns success and stores nothing. Asserted here rather
+        # than discovered from an empty table weeks later. psql, not the
+        # Supabase CLI, which has no arbitrary-SQL command.
         run: psql -v ON_ERROR_STOP=1 -f scripts/assert-write-policies.sql "$SUPABASE_DB_URL"
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
 
-  deploy:
-    name: Deploy web
+  verify:
+    name: Verify what is live
     needs: migrate
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: ${{ github.event.inputs.environment || 'production' }}
+    environment: production
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with: { version: '${{ env.PNPM_VERSION }}' }
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with: { node-version: '${{ env.NODE_VERSION }}', cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-
-      - name: Deploy to Vercel
-        run: |
-          pnpm dlx vercel@latest pull --yes \
-            --environment=${{ github.event.inputs.environment || 'production' }} \
-            --token=$VERCEL_TOKEN
-          pnpm dlx vercel@latest build ${{ github.event.inputs.environment == 'staging' && ' ' || '--prod' }} --token=$VERCEL_TOKEN
-          pnpm dlx vercel@latest deploy --prebuilt ${{ github.event.inputs.environment == 'staging' && ' ' || '--prod' }} --token=$VERCEL_TOKEN
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-  smoke:
-    name: Post-deploy smoke test
-    needs: deploy
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment: ${{ github.event.inputs.environment || 'production' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - name: Health, headers and auth guard
         # Three things, all of which have broken before:
         #   - the app can reach its database
@@ -200,10 +163,9 @@ jobs:
           grep -q '"database":"ok"' /tmp/health.json
 
           echo "headers:"
-          # Here-strings, not `echo | grep -q`. Under pipefail, grep -q exits
-          # on its first match and can kill echo with SIGPIPE mid-write, which
-          # reports the pipeline as FAILED - a false "HSTS missing" on a good
-          # deploy. No pipe, no race.
+          # Here-strings, not `echo | grep -q`: under pipefail, grep -q exiting
+          # on its first match can kill echo with SIGPIPE and fail the step on
+          # a good release.
           HEADERS=$(curl -sI "$BASE/login")
           grep -qi 'strict-transport-security' <<< "$HEADERS" || { echo "::error::HSTS missing"; exit 1; }
           grep -qi 'x-frame-options: DENY'      <<< "$HEADERS" || { echo "::error::X-Frame-Options missing"; exit 1; }
@@ -213,27 +175,31 @@ jobs:
           CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/clients")
           [ "$CODE" = "307" ] || [ "$CODE" = "302" ] || { echo "::error::/clients served $CODE unauthenticated"; exit 1; }
 
-          echo "all smoke checks passed"
+          echo "all checks passed"
 
       - name: Deployed version is the approved commit
-        # NIST SA-10(5) and (6): the thing now serving traffic is exactly the
-        # commit that passed review and the gate above - not a stale build, not
-        # a cached artifact, not a deploy someone ran by hand in between.
+        # NIST SA-10(5) and (6): what is serving traffic is exactly the commit
+        # that passed the gate. The commit is baked into the build
+        # (BUILD_COMMIT_SHA in next.config.ts, from Vercel's git metadata) and
+        # reported by /api/health.
         #
-        # The commit is baked into the build by next.config.ts (BUILD_COMMIT_SHA,
-        # from GITHUB_SHA at build time) and reported by /api/health. A mismatch
-        # here means the deploy "succeeded" and something else is live.
+        # WAITS rather than failing at once: Vercel promotes a build only after
+        # its Deployment Checks pass, which can finish after this workflow
+        # starts. Ten minutes without a match means Vercel is holding the build
+        # back - look at the deployment's checks in the Vercel dashboard.
         #
-        # `curl -s`, not `-sf`: the health route answers 503 when the database
-        # is down, and -f would discard the body - the version would come back
-        # empty and the error would say nothing about which build is live.
-        # Which commit is serving is a separate question from whether its
-        # database is healthy; the step above already answers the second.
+        # `curl -s`, not `-sf`: a 503 from a degraded database still carries
+        # the version, and -f would throw it away.
         run: |
           set -euo pipefail
-          SERVING=$(curl -s "${{ vars.APP_URL }}/api/health" | jq -r '.version // "unreported"')
-          if [ "$SERVING" != "$GITHUB_SHA" ]; then
-            echo "::error::Production is serving '$SERVING'; the approved commit is $GITHUB_SHA."
-            exit 1
-          fi
-          echo "Serving $SERVING - matches the approved commit."
+          for attempt in $(seq 1 20); do
+            SERVING=$(curl -s "${{ vars.APP_URL }}/api/health" | jq -r '.version // "unreported"')
+            if [ "$SERVING" = "$GITHUB_SHA" ]; then
+              echo "Serving $SERVING - matches the approved commit."
+              exit 0
+            fi
+            echo "live: $SERVING, waiting for $GITHUB_SHA (attempt $attempt of 20)"
+            sleep 30
+          done
+          echo "::error::Production is still serving '$SERVING' after 10 minutes; the approved commit is $GITHUB_SHA."
+          exit 1
